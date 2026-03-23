@@ -1,0 +1,50 @@
+{
+  "last_updated": "2026-03-22",
+  "repos": [
+    {
+      "name": "whisper",
+      "repo_url": "https://github.com/openai/whisper",
+      "stars": 0,
+      "description": "Speech recognition model from OpenAI",
+      "category": "Audio",
+      "framework": "Python/PyTorch",
+      "last_updated": "2026-03-22"
+    },
+    {
+      "name": "llama.cpp",
+      "repo_url": "https://github.com/ggerganov/llama.cpp",
+      "stars": 0,
+      "description": "Local LLM inference in C/C++",
+      "category": "LLM",
+      "framework": "C++",
+      "last_updated": "2026-03-22"
+    },
+    {
+      "name": "stable-diffusion-webui",
+      "repo_url": "https://github.com/AUTOMATIC1111/stable-diffusion-webui",
+      "stars": 0,
+      "description": "Web UI for Stable Diffusion",
+      "category": "Diffusion",
+      "framework": "Python/PyTorch",
+      "last_updated": "2026-03-22"
+    },
+    {
+      "name": "ultralytics",
+      "repo_url": "https://github.com/ultralytics/ultralytics",
+      "stars": 0,
+      "description": "YOLOv8 computer vision framework",
+      "category": "Vision",
+      "framework": "Python/PyTorch",
+      "last_updated": "2026-03-22"
+    },
+    {
+      "name": "FastChat",
+      "repo_url": "https://github.com/lm-sys/FastChat",
+      "stars": 0,
+      "description": "Open platform for training and serving chat models",
+      "category": "LLM",
+      "framework": "Python/PyTorch",
+      "last_updated": "2026-03-22"
+    }
+  ]
+}
