@@ -95,7 +95,7 @@ class VmProvisionTest(unittest.TestCase):
                 )
 
             self.assertFalse(result.ok)
-            self.assertTrue(any("Local is usually the best first choice." in message for message in displayed))
+            self.assertTrue(any("Inside the VM, only CPU is available." in message for message in displayed))
             self.assertTrue(any("CUDA is unsupported here." in message for message in displayed))
             self.assertIn("brew install --cask multipass", result.message)
 

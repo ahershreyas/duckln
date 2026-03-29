@@ -117,3 +117,7 @@ Phases based on `plan.md`.
 - [x] Add post-onboarding hint directing users to `/help` for command discovery (Plan: 19; Req: R11)
 - [x] Add cancel/return option to `/repos` selector and preserve session state on cancel (Plan: 17; Req: R11)
 - [x] Make VM CUDA guidance hardware-aware based on host architecture, NVIDIA/CUDA detection, and VM GPU access capability (Plan: 27; Req: R12)
+- [x] Generate real bundled `src/assets/repos.json` from GitHub topic data for launch (Plan: 17; Req: R11)
+- [x] Add a repo-catalog update script to regenerate `src/assets/repos.json` from GitHub topic data (Plan: 17; Req: R11)
+- [x] Add a GitHub Actions workflow to refresh `src/assets/repos.json` automatically on a schedule (Plan: 17; Req: R11)
+- [x] Filter bundled repo catalog to exclude training-focused repos and keep inference/serving/tooling repos only (Plan: 17; Req: R11)

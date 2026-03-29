@@ -1,50 +1,104 @@
 {
-  "last_updated": "2026-03-22",
+  "last_updated": "2026-03-29",
   "repos": [
     {
-      "name": "whisper",
-      "repo_url": "https://github.com/openai/whisper",
-      "stars": 0,
-      "description": "Speech recognition model from OpenAI",
-      "category": "Audio",
-      "framework": "Python/PyTorch",
-      "last_updated": "2026-03-22"
-    },
-    {
-      "name": "llama.cpp",
-      "repo_url": "https://github.com/ggerganov/llama.cpp",
-      "stars": 0,
-      "description": "Local LLM inference in C/C++",
+      "name": "AutoGPT",
+      "repo_url": "https://github.com/Significant-Gravitas/AutoGPT",
+      "stars": 182932,
+      "description": "AutoGPT is the vision of accessible AI for everyone, to use and to build on. Our mission is to provide the tools, so that you can focus on what matters.",
       "category": "LLM",
-      "framework": "C++",
-      "last_updated": "2026-03-22"
+      "framework": "Python",
+      "last_updated": "2026-03-29"
     },
     {
       "name": "stable-diffusion-webui",
       "repo_url": "https://github.com/AUTOMATIC1111/stable-diffusion-webui",
-      "stars": 0,
-      "description": "Web UI for Stable Diffusion",
-      "category": "Diffusion",
+      "stars": 162017,
+      "description": "Stable Diffusion web UI",
+      "category": "Deep Learning",
       "framework": "Python/PyTorch",
-      "last_updated": "2026-03-22"
+      "last_updated": "2026-03-29"
+    },
+    {
+      "name": "open-webui",
+      "repo_url": "https://github.com/open-webui/open-webui",
+      "stars": 129195,
+      "description": "User-friendly AI Interface (Supports Ollama, OpenAI API, ...)",
+      "category": "LLM",
+      "framework": "Python",
+      "last_updated": "2026-03-29"
+    },
+    {
+      "name": "ComfyUI",
+      "repo_url": "https://github.com/Comfy-Org/ComfyUI",
+      "stars": 107253,
+      "description": "The most powerful and modular diffusion model GUI, api and backend with a graph/nodes interface.",
+      "category": "Stable Diffusion",
+      "framework": "Python/PyTorch",
+      "last_updated": "2026-03-29"
+    },
+    {
+      "name": "firecrawl",
+      "repo_url": "https://github.com/firecrawl/firecrawl",
+      "stars": 100502,
+      "description": "\ud83d\udd25 The Web Data API for AI - Turn entire websites into LLM-ready markdown or structured data",
+      "category": "LLM",
+      "framework": "TypeScript",
+      "last_updated": "2026-03-29"
+    },
+    {
+      "name": "vllm",
+      "repo_url": "https://github.com/vllm-project/vllm",
+      "stars": 74643,
+      "description": "A high-throughput and memory-efficient inference and serving engine for LLMs",
+      "category": "PyTorch",
+      "framework": "Python/PyTorch",
+      "last_updated": "2026-03-29"
     },
     {
       "name": "ultralytics",
       "repo_url": "https://github.com/ultralytics/ultralytics",
-      "stars": 0,
-      "description": "YOLOv8 computer vision framework",
-      "category": "Vision",
+      "stars": 55154,
+      "description": "Ultralytics YOLO \ud83d\ude80",
+      "category": "Computer Vision",
       "framework": "Python/PyTorch",
-      "last_updated": "2026-03-22"
+      "last_updated": "2026-03-29"
     },
     {
-      "name": "FastChat",
-      "repo_url": "https://github.com/lm-sys/FastChat",
-      "stars": 0,
-      "description": "Open platform for training and serving chat models",
-      "category": "LLM",
-      "framework": "Python/PyTorch",
-      "last_updated": "2026-03-22"
+      "name": "LocalAI",
+      "repo_url": "https://github.com/mudler/LocalAI",
+      "stars": 44564,
+      "description": "LocalAI is the open-source AI engine. Run any model - LLMs, vision, voice, image, video - on any hardware. No GPU required.",
+      "category": "Stable Diffusion",
+      "framework": "Python/Stable Diffusion",
+      "last_updated": "2026-03-29"
+    },
+    {
+      "name": "mediapipe",
+      "repo_url": "https://github.com/google-ai-edge/mediapipe",
+      "stars": 34395,
+      "description": "Cross-platform, customizable ML solutions for live and streaming media.",
+      "category": "Computer Vision",
+      "framework": "C++",
+      "last_updated": "2026-03-29"
+    },
+    {
+      "name": "langchain4j",
+      "repo_url": "https://github.com/langchain4j/langchain4j",
+      "stars": 11367,
+      "description": "LangChain4j is an open-source Java library that simplifies the integration of LLMs into Java applications through a unified API, providing access to popular LLMs and vector databases. It makes implementing RAG, tool calling (including support for MCP), and agents easy. LangChain4j integrates seamlessly with various enterprise Java frameworks.",
+      "category": "Hugging Face",
+      "framework": "Python/Hugging Face",
+      "last_updated": "2026-03-29"
+    },
+    {
+      "name": "openvino",
+      "repo_url": "https://github.com/openvinotoolkit/openvino",
+      "stars": 9966,
+      "description": "OpenVINO\u2122 is an open source toolkit for optimizing and deploying AI inference",
+      "category": "Stable Diffusion",
+      "framework": "Python/Hugging Face",
+      "last_updated": "2026-03-29"
     }
   ]
 }

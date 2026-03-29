@@ -10,6 +10,7 @@ import unittest
 from duckln.config import ENV_CONFIG_DIR, load_raw_config, resolve_config_paths
 from state.repo_catalog import (
     RepoCatalogRecord,
+    generate_bundled_repo_catalog,
     initialize_local_repo_catalog_cache,
     load_bundled_repo_catalog,
     load_local_repo_catalog,
@@ -268,6 +269,129 @@ class RepoCatalogTest(unittest.TestCase):
             self.assertIn("Repo catalog refresh failed:", result.message)
             self.assertEqual(("cached",), tuple(record.name for record in result.records))
             self.assertEqual(original_payload, json.loads(cache_path.read_text(encoding="utf-8")))
+
+    def test_generate_bundled_repo_catalog_filters_training_repos_and_keeps_practical_repos(self) -> None:
+        client = FakeGitHubClient(
+            {
+                "machine-learning": FakeResponse(
+                    200,
+                    {
+                        "items": [
+                            {
+                                "name": "trainer-kit",
+                                "html_url": "https://github.com/example/trainer-kit",
+                                "stargazers_count": 90,
+                                "description": "Training and fine-tuning toolkit",
+                                "language": "Python",
+                                "topics": ["machine-learning", "training"],
+                                "updated_at": "2026-03-20T12:00:00Z",
+                            },
+                            {
+                                "name": "inference-api",
+                                "html_url": "https://github.com/example/inference-api",
+                                "stargazers_count": 80,
+                                "description": "Inference API for model serving",
+                                "language": "Python",
+                                "topics": ["machine-learning", "inference", "api"],
+                                "updated_at": "2026-03-19T12:00:00Z",
+                            },
+                        ]
+                    },
+                ),
+                "deep-learning": FakeResponse(200, {"items": []}),
+                "llm": FakeResponse(
+                    200,
+                    {
+                        "items": [
+                            {
+                                "name": "FastChat",
+                                "html_url": "https://github.com/lm-sys/FastChat",
+                                "stargazers_count": 70,
+                                "description": "Open platform for serving chat models",
+                                "language": "Python",
+                                "topics": ["llm"],
+                                "updated_at": "2026-03-18T12:00:00Z",
+                            },
+                            {
+                                "name": "grpo-lab",
+                                "html_url": "https://github.com/example/grpo-lab",
+                                "stargazers_count": 75,
+                                "description": "GRPO experiments for post-training",
+                                "language": "Python",
+                                "topics": ["llm", "grpo"],
+                                "updated_at": "2026-03-17T12:00:00Z",
+                            },
+                        ]
+                    },
+                ),
+                "stable-diffusion": FakeResponse(200, {"items": []}),
+                "computer-vision": FakeResponse(200, {"items": []}),
+                "pytorch": FakeResponse(200, {"items": []}),
+                "huggingface": FakeResponse(200, {"items": []}),
+            }
+        )
+
+        records = generate_bundled_repo_catalog(client=client, per_topic_limit=10)
+
+        self.assertEqual(("inference-api", "FastChat"), tuple(record.name for record in records))
+        self.assertEqual((80, 70), tuple(record.stars for record in records))
+
+    def test_generate_bundled_repo_catalog_deduplicates_by_repo_url_and_sorts_descending(self) -> None:
+        client = FakeGitHubClient(
+            {
+                "machine-learning": FakeResponse(
+                    200,
+                    {
+                        "items": [
+                            {
+                                "name": "shared",
+                                "html_url": "https://github.com/example/shared",
+                                "stargazers_count": 50,
+                                "description": "Inference demo",
+                                "language": "Python",
+                                "topics": ["machine-learning", "inference", "demo"],
+                                "updated_at": "2026-03-20T12:00:00Z",
+                            }
+                        ]
+                    },
+                ),
+                "deep-learning": FakeResponse(200, {"items": []}),
+                "llm": FakeResponse(
+                    200,
+                    {
+                        "items": [
+                            {
+                                "name": "shared",
+                                "html_url": "https://github.com/example/shared",
+                                "stargazers_count": 50,
+                                "description": "Inference demo",
+                                "language": "Python",
+                                "topics": ["llm", "api"],
+                                "updated_at": "2026-03-21T12:00:00Z",
+                            },
+                            {
+                                "name": "llama.cpp",
+                                "html_url": "https://github.com/ggerganov/llama.cpp",
+                                "stargazers_count": 60,
+                                "description": "Port of LLaMA inference in C/C++",
+                                "language": "C++",
+                                "topics": ["llm"],
+                                "updated_at": "2026-03-22T12:00:00Z",
+                            },
+                        ]
+                    },
+                ),
+                "stable-diffusion": FakeResponse(200, {"items": []}),
+                "computer-vision": FakeResponse(200, {"items": []}),
+                "pytorch": FakeResponse(200, {"items": []}),
+                "huggingface": FakeResponse(200, {"items": []}),
+            }
+        )
+
+        records = generate_bundled_repo_catalog(client=client, per_topic_limit=10)
+
+        self.assertEqual(("llama.cpp", "shared"), tuple(record.name for record in records))
+        self.assertEqual(2, len(records))
 
 
 if __name__ == "__main__":

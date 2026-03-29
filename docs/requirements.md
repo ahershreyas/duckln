@@ -199,6 +199,10 @@ Excluded from v1:
 - Duckln MUST provide a `/vm` command to allow users to create and manage a VM at any time during an active session.
 - WHEN the user runs `/vm` THEN Duckln MUST trigger the same VM setup flow as onboarding (CPU, memory, name, creation, optional Duckln install).
 - The `/vm` command MUST display a short one-line description of what it does in the command palette.
+- Duckln MUST exclude training-focused repositories from the bundled repo catalog at launch.
+- Duckln MUST prefer repositories focused on inference, serving, demos, APIs, deployment, or end-user tooling.
+- The repo catalog generation flow MUST filter out repositories whose description or topics indicate training-heavy workflows, including keywords such as `training`, `fine-tuning`, `pretraining`, and `GRPO`.
+- The repo catalog generation flow SHOULD prefer repositories whose description or topics indicate inference or deployment workflows, including keywords such as `inference`, `serving`, `demo`, `api`, and `deployment`.
 
 ## R12 — Agent Behavior and Memory Policy
 

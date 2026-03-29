@@ -24,6 +24,30 @@ GITHUB_REPO_TOPICS = (
     "huggingface",
 )
 DEFAULT_TOPIC_FETCH_LIMIT = 10
+LAUNCH_PRIORITY_REPO_NAMES = frozenset(
+    {
+        "whisper",
+        "llama.cpp",
+        "stable-diffusion-webui",
+        "ultralytics",
+        "fastchat",
+    }
+)
+TRAINING_SIGNALS = (
+    "training",
+    "fine-tuning",
+    "fine tuning",
+    "pretraining",
+    "pre-training",
+    "grpo",
+)
+PRACTICAL_RUNNABLE_SIGNALS = (
+    "inference",
+    "serving",
+    "demo",
+    "api",
+    "deployment",
+)
 
 
 class RepoCatalogRefreshError(RuntimeError):
@@ -95,6 +119,37 @@ def load_sorted_local_repo_catalog(config_dir: Path) -> tuple[RepoCatalogRecord,
 
     records = load_local_repo_catalog(config_dir)
     return tuple(sorted(records, key=lambda item: (-item.stars, item.name.lower())))
+
+
+def generate_bundled_repo_catalog(
+    *,
+    client: Any | None = None,
+    per_topic_limit: int = DEFAULT_TOPIC_FETCH_LIMIT,
+) -> tuple[RepoCatalogRecord, ...]:
+    """Generate the launch-ready bundled repo catalog from GitHub topic data."""
+
+    if per_topic_limit <= 0:
+        raise ValueError("Bundled repo catalog generation requires a positive per-topic limit.")
+
+    normalized_records_by_url: dict[str, RepoCatalogRecord] = {}
+    for topic in GITHUB_REPO_TOPICS:
+        for item in _search_github_topic(topic, client=client, per_page=per_topic_limit):
+            if not _include_in_bundled_launch_catalog(item):
+                continue
+            record = _normalize_github_repo(item, topic=topic)
+            existing = normalized_records_by_url.get(record.repo_url)
+            if existing is None or (record.stars, record.name.lower()) > (existing.stars, existing.name.lower()):
+                normalized_records_by_url[record.repo_url] = record
+
+    return tuple(sorted(normalized_records_by_url.values(), key=lambda item: (-item.stars, item.name.lower())))
+
+
+def write_bundled_repo_catalog(records: tuple[RepoCatalogRecord, ...]) -> Path:
+    """Write the bundled repo catalog asset after successful generation."""
+
+    bundled_path = resolve_bundled_repo_catalog_path()
+    _write_repo_catalog_file(bundled_path, records)
+    return bundled_path
 
 
 def refresh_local_repo_catalog(
@@ -176,6 +231,28 @@ def _search_github_topic(topic: str, *, client: Any | None, per_page: int) -> li
     if not isinstance(items, list):
         raise RepoCatalogRefreshError(f"GitHub topic fetch returned an invalid payload for '{topic}'.")
     return [item for item in items if isinstance(item, dict)]
+
+
+def _include_in_bundled_launch_catalog(payload: dict[str, Any]) -> bool:
+    if _is_launch_priority_repo(payload):
+        return True
+    if _contains_any_signal(payload, TRAINING_SIGNALS):
+        return False
+    return _contains_any_signal(payload, PRACTICAL_RUNNABLE_SIGNALS)
+
+
+def _is_launch_priority_repo(payload: dict[str, Any]) -> bool:
+    name = str(payload.get("name") or "").strip().lower()
+    return name in LAUNCH_PRIORITY_REPO_NAMES
+
+
+def _contains_any_signal(payload: dict[str, Any], signals: tuple[str, ...]) -> bool:
+    searchable_parts = [str(payload.get("description") or "").lower()]
+    topics = payload.get("topics")
+    if isinstance(topics, list):
+        searchable_parts.extend(str(topic).lower() for topic in topics)
+    searchable_text = " ".join(searchable_parts)
+    return any(signal.lower() in searchable_text for signal in signals)
 
 
 def _github_get(path: str, *, params: dict[str, str], client: Any | None) -> Any:
