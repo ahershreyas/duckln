@@ -98,6 +98,18 @@ class ManagedMemoryRecord:
     updated_at: str
 
 
+@dataclass(frozen=True)
+class RepoStateRecord:
+    """SQLite-backed repo state row used for scoped cleanup."""
+
+    repo_key: str
+    repo_path: str | None
+    repo_url: str | None
+    status: str
+    summary: str
+    updated_at: str
+
+
 def resolve_state_store_paths(config_dir: Path) -> StateStorePaths:
     """Resolve the SQLite state store path relative to Duckln config."""
 
@@ -295,6 +307,30 @@ class SQLiteStateStore:
                 updated_at=str(row["updated_at"]),
             )
             for row in rows
+        )
+
+    def get_latest_repo_state(self) -> RepoStateRecord | None:
+        """Return the most recently updated tracked repo state."""
+
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT repo_key, repo_path, repo_url, status, summary, updated_at
+                FROM repo_state
+                ORDER BY updated_at DESC, rowid DESC
+                LIMIT 1
+                """
+            ).fetchone()
+
+        if row is None:
+            return None
+        return RepoStateRecord(
+            repo_key=str(row["repo_key"]),
+            repo_path=str(row["repo_path"]) if row["repo_path"] is not None else None,
+            repo_url=str(row["repo_url"]) if row["repo_url"] is not None else None,
+            status=str(row["status"]),
+            summary=str(row["summary"]),
+            updated_at=str(row["updated_at"]),
         )
 
     def record_run(
@@ -498,6 +534,64 @@ class SQLiteStateStore:
             ).fetchall()
         return tuple(row["name"] for row in rows)
 
+    def clear_session_history(self) -> int:
+        """Delete session-history rows and SQLite-backed session summaries."""
+
+        with self._connect() as connection:
+            run_count = connection.execute("DELETE FROM run_history").rowcount
+            session_count = connection.execute(
+                "DELETE FROM managed_memory WHERE memory_kind = ?",
+                ("session",),
+            ).rowcount
+        return int(run_count) + int(session_count)
+
+    def clear_project_state(self, *, repo_key: str) -> int:
+        """Delete tracked state for a single project scope."""
+
+        with self._connect() as connection:
+            repo_count = connection.execute(
+                "DELETE FROM repo_state WHERE repo_key = ?",
+                (repo_key,),
+            ).rowcount
+            run_count = connection.execute(
+                "DELETE FROM run_history WHERE repo_key = ?",
+                (repo_key,),
+            ).rowcount
+            memory_count = connection.execute(
+                """
+                DELETE FROM managed_memory
+                WHERE json_extract(metadata_json, '$.repo_key') = ?
+                """,
+                (repo_key,),
+            ).rowcount
+        return int(repo_count) + int(run_count) + int(memory_count)
+
+    def clear_factory_state(self) -> int:
+        """Delete all tracked SQLite state so Duckln can rebuild a clean baseline."""
+
+        table_names = (
+            "config_state",
+            "run_history",
+            "repo_state",
+            "vm_linkage",
+            "healthcheck_state",
+            "managed_memory",
+        )
+        deleted_rows = 0
+        with self._connect() as connection:
+            for table_name in table_names:
+                deleted_rows += int(connection.execute(f"DELETE FROM {table_name}").rowcount)
+        return deleted_rows
+
+    def vacuum(self) -> None:
+        """Run SQLite VACUUM after bounded cleanup work."""
+
+        connection = sqlite3.connect(self.database_file)
+        try:
+            connection.execute("VACUUM")
+        finally:
+            connection.close()
+
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.database_file)
         connection.row_factory = sqlite3.Row
@@ -549,4 +643,3 @@ def _dump_metadata(metadata: Mapping[str, Any] | None) -> str:
 
 def _utc_now() -> str:
     return datetime.now(tz=timezone.utc).isoformat(timespec="seconds")
-

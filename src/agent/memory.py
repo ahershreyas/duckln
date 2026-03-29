@@ -103,9 +103,21 @@ def materialize_memory_view(
 ) -> tuple[Path, ...]:
     """Materialize managed memory records into the agent-facing filesystem view."""
 
-    written_paths: list[Path] = []
+    desired_files: list[tuple[Path, str]] = []
     for relative_path, content in records:
-        written_paths.append(materialize_memory_file(paths, relative_path=relative_path, content=content))
+        destination = _resolve_materialized_path(paths, relative_path)
+        desired_files.append((destination, _normalize_materialized_content(content)))
+
+    desired_paths = {path for path, _ in desired_files}
+    for existing_path in _list_managed_memory_files(paths):
+        if existing_path not in desired_paths:
+            existing_path.unlink()
+
+    written_paths: list[Path] = []
+    for destination, normalized_content in desired_files:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(normalized_content + "\n", encoding="utf-8")
+        written_paths.append(destination)
     return tuple(written_paths)
 
 
@@ -145,3 +157,12 @@ def _normalize_materialized_content(content: str) -> str:
     if not normalized:
         raise ValueError("Materialized memory content cannot be empty.")
     return normalized
+
+
+def _list_managed_memory_files(paths: AgentMemoryPaths) -> tuple[Path, ...]:
+    managed_files: list[Path] = []
+    if paths.agents_file.exists():
+        managed_files.append(paths.agents_file)
+    for directory in (paths.skills_dir, paths.knowledge_dir, paths.sessions_dir):
+        managed_files.extend(sorted(path for path in directory.glob("*.md") if path.is_file()))
+    return tuple(managed_files)

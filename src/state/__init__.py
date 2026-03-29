@@ -1,6 +1,8 @@
 """SQLite-backed runtime state helpers for Duckln."""
 
 from .access import (
+    MemoryClearResult,
+    clear_memory_scope,
     initialize_managed_memory_state,
     materialize_managed_memory_state,
     read_config_snapshot,
@@ -38,12 +40,14 @@ __all__ = [
     "STATE_DB_FILE_NAME",
     "STATE_DIR_NAME",
     "ManagedMemoryRecord",
+    "MemoryClearResult",
     "REPO_CATALOG_FILE_NAME",
     "RepoCatalogRefreshError",
     "RepoCatalogRefreshResult",
     "RepoCatalogRecord",
     "SQLiteStateStore",
     "StateStorePaths",
+    "clear_memory_scope",
     "refresh_local_repo_catalog",
     "initialize_state_store",
     "initialize_local_repo_catalog_cache",

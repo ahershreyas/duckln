@@ -177,8 +177,7 @@ Excluded from v1:
 - WHEN VM is selected THEN Duckln MUST:
   - create VM
   - install Duckln inside VM
-  - carry over minimal configuration (provider, model, mode)
-- WHEN running on Apple Silicon THEN Duckln MUST:
+  - WHEN running on Apple Silicon THEN Duckln MUST:
   - detect lack of CUDA
   - recommend CPU/MPS
   - avoid suggesting CUDA setup
@@ -191,7 +190,15 @@ Excluded from v1:
   - show one-line summary of deletion
   - require confirmation before execution
   - WHEN the default VM name already exists THEN Duckln MUST generate a unique name by appending an incrementing suffix (e.g., duckln-vm-1, duckln-vm-2).
-
+- WHEN a VM is created THEN Duckln MUST ask the user: "Duckln can work inside the VM to manage dependencies and fix errors there. Do you want to install Duckln in your VM?"
+- WHEN the user agrees THEN Duckln MUST install a fresh Duckln runtime inside the VM and initialize fresh Duckln folders there.
+- WHEN the user declines THEN Duckln MUST leave the VM ready for manual use and display essential commands to connect to and use the VM.
+- Duckln MUST NOT automatically transfer local provider credentials, API keys, or local Duckln config into the VM.
+- WHEN Duckln is installed inside the VM THEN Duckln MUST ask the user to configure provider, model, and API key manually inside the VM using Duckln config commands.
+- WHEN API credentials are not configured inside the VM THEN Duckln MUST continue non-auth setup steps and pause only API-dependent steps with a clear message.
+- Duckln MUST provide a `/vm` command to allow users to create and manage a VM at any time during an active session.
+- WHEN the user runs `/vm` THEN Duckln MUST trigger the same VM setup flow as onboarding (CPU, memory, name, creation, optional Duckln install).
+- The `/vm` command MUST display a short one-line description of what it does in the command palette.
 
 ## R12 — Agent Behavior and Memory Policy
 
@@ -199,16 +206,28 @@ Excluded from v1:
 - Duckln MUST use a filesystem-facing memory structure for agent-readable state, including `AGENTS.md`, `skills/`, `knowledge/`, and `sessions/`.
 - Duckln MUST use SQLite as an internal system-state layer for configuration, run history, repo state, VM linkage, and healthcheck state without requiring user database setup.
 - Duckln MUST keep memory small and high-signal, storing summaries and reusable knowledge rather than raw logs or transcripts.
-- Duckln MUST provide user-controlled memory clearing through `/memory clear` with explicit confirmationshow warning sign and selectable scope.
+- Duckln MUST provide user-controlled memory clearing through `/memory clear` with explicit confirmation and selectable scope.
+- WHEN the user runs `/memory clear` THEN Duckln MUST include a Cancel / Back option in the selection menu.
+- WHEN the user selects Cancel / Back in `/memory clear` THEN Duckln MUST return to the terminal prompt without changing any state.
 - Duckln MUST never silently truncate or auto-delete agent memory.
 - Duckln MUST present slash commands with a short readable one-line description.
 - Duckln MUST behave correctly across Apple Silicon, non-Apple systems, and NVIDIA/CUDA-capable systems by adapting recommendations to actual detected hardware.
 - WHEN Duckln is performing a long-running step THEN it MAY show short friendly progress messages, but they MUST stay concise, readable, and not spam the terminal.
-Example good message: Duckln is working hard for you ❤️ (the heart must pluse).
+Duckln MAY show short friendly progress messages, but they MUST stay concise and non-intrusive.
+Example good message: Duckln is working hard for you ❤️.
 - Duckln MUST detect local system hardware including Apple Silicon (ARM/MPS), CPU-only systems, and NVIDIA CUDA-capable systems on Linux/Windows, and adapt setup guidance accordingly.
+- Duckln MUST NOT show a fixed “no CUDA in VM” warning for all systems.
+- WHEN the host is Apple Silicon THEN Duckln MUST clearly state that CUDA is not supported and recommend CPU or MPS instead.
+- WHEN the host is a non-Apple system THEN Duckln MUST detect whether NVIDIA/CUDA is available on the host and whether the VM has GPU access before making CUDA recommendations.
+- Duckln MUST only suggest CUDA installation when hardware support and VM access make it a realistic path.
 - Duckln MUST NOT suggest CUDA setup on unsupported systems (e.g., Apple Silicon).
 - Duckln MUST verify CUDA availability before recommending GPU-dependent steps.
 - Duckln MUST treat SQLite as the authoritative backing store for agent memory metadata and managed memory content.
 - Duckln MUST expose agent memory to the runtime agent in a filesystem-shaped structure, materialized from SQLite as needed.
 - Duckln MUST support synchronization between SQLite-backed memory records and the agent-facing filesystem view without storing raw logs or transcripts.
 - Duckln MUST preserve small, high-signal memory files and avoid uncontrolled memory expansion.
+
+### R13 — Command Discovery and Safe Interaction
+- [ ] Implement `/help` command to display available slash commands with one-line descriptions (Plan: 19; Req: R11)
+- [ ] Add post-onboarding hint directing users to `/help` for command discovery (Plan: 19; Req: R11)
+- [ ] Add cancel/return option to `/repos` selector and preserve session state on cancel (Plan: 17; Req: R11)

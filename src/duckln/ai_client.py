@@ -56,6 +56,15 @@ class ProviderValidationResult:
     models: tuple[ProviderModel, ...] = ()
 
 
+@dataclass(frozen=True)
+class ProviderRequestError(ValueError):
+    """Bounded provider request failure with separate public/log messages."""
+
+    public_message: str
+    log_message: str
+    status_code: int | None = None
+
+
 class HttpResponse(Protocol):
     """Minimal response contract used by provider adapters."""
 
@@ -102,39 +111,59 @@ class ProviderAdapter:
                 client=client,
             )
         except Exception as exc:
+            public_message = f"Failed to connect to {self.provider.label}. Please retry."
+            log_message = (
+                f"{public_message} "
+                f"url={self.models_url()} timeout={DEFAULT_TIMEOUT_SECONDS}s "
+                f"error={type(exc).__name__}: {exc}"
+            )
             log_provider_failure(
                 provider=self.provider.value,
                 model=model_id,
                 status_code=None,
-                message=f"Failed to connect to {self.provider.label}. Please retry.",
+                message=log_message,
             )
-            raise ValueError(f"Failed to connect to {self.provider.label}. Please retry.") from exc
+            raise ProviderRequestError(public_message, log_message) from exc
 
         if response.status_code >= 400:
-            log_provider_failure(
-                provider=self.provider.value,
-                model=model_id,
-                status_code=response.status_code,
-                message=(
-                    f"Invalid {self.provider.api_key_name.lower()} or provider error "
-                    f"(HTTP {response.status_code}). Please retry."
-                ),
-            )
-            raise ValueError(
+            message = (
                 f"Invalid {self.provider.api_key_name.lower()} or provider error "
                 f"(HTTP {response.status_code}). Please retry."
             )
-
-        payload = response.json()
-        models = self.parse_models(payload)
-        if not models:
             log_provider_failure(
                 provider=self.provider.value,
                 model=model_id,
                 status_code=response.status_code,
-                message=f"{self.provider.label} returned an empty model list. Please retry.",
+                message=message,
             )
-            raise ValueError(f"{self.provider.label} returned an empty model list. Please retry.")
+            raise ProviderRequestError(message, message, status_code=response.status_code)
+
+        try:
+            payload = response.json()
+        except Exception as exc:
+            public_message = f"{self.provider.label} returned an unreadable response. Please retry."
+            log_message = (
+                f"{public_message} "
+                f"url={self.models_url()} status={response.status_code} "
+                f"error={type(exc).__name__}: {exc}"
+            )
+            log_provider_failure(
+                provider=self.provider.value,
+                model=model_id,
+                status_code=response.status_code,
+                message=log_message,
+            )
+            raise ProviderRequestError(public_message, log_message, status_code=response.status_code) from exc
+        models = self.parse_models(payload)
+        if not models:
+            message = f"{self.provider.label} returned an empty model list. Please retry."
+            log_provider_failure(
+                provider=self.provider.value,
+                model=model_id,
+                status_code=response.status_code,
+                message=message,
+            )
+            raise ProviderRequestError(message, message, status_code=response.status_code)
         return models
 
     def validate_api_key(
@@ -148,6 +177,8 @@ class ProviderAdapter:
 
         try:
             models = self.list_models(api_key, client=client)
+        except ProviderRequestError as exc:
+            return ProviderValidationResult(ok=False, message=exc.public_message)
         except ValueError as exc:
             return ProviderValidationResult(ok=False, message=str(exc))
 

@@ -98,51 +98,55 @@ Duckln v1 should be implemented as a terminal-native Python CLI with modular bou
     Covers: R11
     Why: core product value — clone, setup, verify
 
-19. **Implement VM orchestration (Multipass Ubuntu)**
+19. **Implement VM orchestration (Multipass Ubuntu) with optional fresh Duckln install inside the VM Includes `/vm` command to trigger VM setup outside onboarding.**
     Covers: R11
-    Why: safe isolated environment option
+    Why: gives users a clean isolated environment while keeping credentials and config under explicit user control Includes: `/vm` command to trigger VM setup outside onboarding.
 
-20. **Implement agent memory system (filesystem + SQLite hybrid)**
+20. **Implement manual provider/model/API configuration flow inside the VM**
+    Covers: R11
+    Why: avoids automatic credential transfer and keeps VM setup explicit, safe, and user-controlled
+
+21. **Implement agent memory system (filesystem + SQLite hybrid)**
     Covers: R11
     Why: enables agent learning and state persistence
 
-21. **Implement memory control commands**
+22. **Implement memory control commands**
     Covers: R11
     Why: user trust and control over stored data
 
-22. **Adopt AGENTS.md as the primary agent behavior contract**
+23. **Adopt AGENTS.md as the primary agent behavior contract**
     Covers: R12
     Why: Codex and future runtime agent behavior need a single authoritative contract
 
-23. **Implement filesystem-facing memory with SQLite-backed state**
+24. **Implement filesystem-facing memory with SQLite-backed state**
     Covers: R11, R12
     Why: gives the agent structured memory while preserving performance and reliability
 
-24. **Implement hardware-aware behavior across Apple Silicon, non-Apple, and NVIDIA systems**
+25. **Implement hardware-aware behavior across Apple Silicon, non-Apple, and NVIDIA systems**
     Covers: R11, R12
     Why: setup and guidance must adapt to real hardware constraints
 
-25. **Implement VM configuration UX (CPU, memory, naming)**
+26. **Implement VM configuration UX (CPU, memory, naming)**
     Covers: R11
     Why: gives user control over VM resources and identification
 
-26. **Implement post-setup guidance and completion feedback**
+27. **Implement post-setup guidance and completion feedback**
     Covers: R11
     Why: improves usability and clarity after environment setup
 
-27. **Implement cross-hardware detection and adaptation (Apple Silicon, CPU-only, NVIDIA CUDA)**
+28. **Implement cross-hardware detection and adaptation (Apple Silicon, CPU-only, NVIDIA CUDA)**
     Covers: R12
     Why: prevents incorrect setup guidance across systems
 
-28. **Implement VM naming conflict resolution with auto-increment suffix**
+29. **Implement VM naming conflict resolution with auto-increment suffix**
     Covers: R11
     Why: prevents VM creation failure due to duplicate names
 
-29. **Implement SQLite-backed virtual memory contract**
+30. **Implement SQLite-backed virtual memory contract**
     Covers: R12
     Why: makes SQLite the source of truth while preserving a filesystem-shaped interface for the agent
 
-30. **Implement memory materialization and sync layer**
+31. **Implement memory materialization and sync layer**
     Covers: R12
     Why: allows Duckln to expose agent-readable files from SQLite-backed memory safely and consistently
 

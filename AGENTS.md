@@ -153,18 +153,22 @@ Use local system probe and optimize for the current hardware.
 
 ### Ubuntu VM
 If user selects Ubuntu VM, Duckln should:
-1. set up the VM
-2. install Duckln runtime/helper inside the VM
-3. carry over only minimal configuration:
-   - provider
-   - model
-   - mode
-   - necessary Duckln memory/config files
-4. continue setup inside the VM
-5. Before transferring any provider credentials or API keys from local to VM, Duckln MUST ask the user for explicit confirmation.
-6. If the user declines credential transfer, Duckln MUST continue VM setup and allow the user to configure provider/model manually inside the VM using Duckln config commands. Inform user once the VM is ready they can add the LLM api key in VM.
-7. Before creating the VM, Duckln MUST ask the user to choose CPU and memory allocation using a simple guided prompt with safe defaults.
-8. Repo setup MUST proceed even if API credentials are not configured; only API-dependent steps should be paused and clearly communicated to the user.
+1. ask the user for VM configuration:
+   - VM name
+   - CPU
+   - memory
+2. create the VM
+3. ask the user exactly:
+   "Duckln can work inside the VM to manage dependencies and fix errors there. Do you want to install Duckln in your VM?"
+4. if the user agrees:
+   - install Duckln runtime/helper inside the VM
+   - initialize fresh Duckln folders inside the VM
+   - instruct the user to run `duckln` and `/config` inside the VM
+5. if the user declines:
+   - leave the VM ready for manual use
+   - show essential connection commands only
+6. Duckln MUST NOT automatically transfer local provider credentials, API keys, local Duckln config, or local Duckln memory into the VM.
+7. Repo setup inside the VM MUST continue without API credentials where possible, and only API-dependent steps should be paused with a clear message.
 
 Do not sync the entire local machine state.
 
@@ -310,11 +314,16 @@ Duckln should support:
 - `/healthcheck`
 - `/repos refresh`
 - `/memory clear`
+- `/vm`
+- `/help`
+- `/repos`
 
 When showing commands:
 - each command must include a one-line explanation
 - descriptions must be short and readable
 - command palette should be navigable with arrow keys
+- Duckln should guide the user after onboarding by suggesting `/help` for command discovery.
+- Repo and VM selection flows must always include a cancel option and return safely to the terminal without changing state.
 
 ---
 

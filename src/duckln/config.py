@@ -531,3 +531,15 @@ def _default_secret_prompt(prompt: str) -> str:
         raise RuntimeError("InquirerPy is required for interactive onboarding.") from exc
 
     return inquirer.secret(message=prompt).execute()
+
+
+def _default_text_prompt(prompt: str, default: str = "") -> str | None:
+    try:
+        from InquirerPy import inquirer
+    except ModuleNotFoundError as exc:
+        raise RuntimeError("InquirerPy is required for interactive prompts.") from exc
+
+    try:
+        return inquirer.text(message=prompt, default=default).execute()
+    except KeyboardInterrupt:
+        return None

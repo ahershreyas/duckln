@@ -43,6 +43,16 @@ class FakeHttpClient:
         return self.responses[url]
 
 
+class RaisingHttpClient:
+    def __init__(self, error: Exception) -> None:
+        self.error = error
+        self.calls: list[tuple[str, dict[str, str], float]] = []
+
+    def get(self, url: str, *, headers: dict[str, str], timeout: float) -> FakeResponse:
+        self.calls.append((url, headers, timeout))
+        raise self.error
+
+
 class ProviderAdaptersReqR1Plan1Plan2Test(unittest.TestCase):
     """Covers adapter selection, auth headers, model listing, and validation flow."""
 
@@ -73,7 +83,10 @@ class ProviderAdaptersReqR1Plan1Plan2Test(unittest.TestCase):
         models = adapter.list_models("router-key", client=client)
 
         self.assertEqual(("openrouter/auto", "openai/gpt-4o-mini"), tuple(model.id for model in models))
+        self.assertEqual(adapter.models_url(), client.calls[0][0])
+        self.assertEqual(10.0, client.calls[0][2])
         self.assertEqual("Bearer router-key", client.calls[0][1]["Authorization"])
+        self.assertEqual("application/json", client.calls[0][1]["Accept"])
 
     def test_r1_plan2_openai_validation_returns_models(self) -> None:
         adapter = OpenAIAdapter()
@@ -160,6 +173,44 @@ class ProviderAdaptersReqR1Plan1Plan2Test(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertEqual("provider_failure", payload["event"])
         self.assertNotIn("sk-secret-12345678", captured.output[0])
+
+    def test_openrouter_connection_failure_logs_specific_request_details_but_returns_concise_error(self) -> None:
+        adapter = OpenRouterAdapter()
+        client = RaisingHttpClient(OSError("DNS lookup failed for openrouter.ai"))
+
+        with self.assertLogs("duckln", level=logging.ERROR) as captured:
+            result = adapter.validate_api_key("router-key", client=client)
+
+        payload = self._parse_log_payload(captured.output[0])
+        self.assertFalse(result.ok)
+        self.assertEqual("Failed to connect to OpenRouter. Please retry.", result.message)
+        self.assertEqual("provider_failure", payload["event"])
+        self.assertIn("url=https://openrouter.ai/api/v1/models", payload["message"])
+        self.assertIn("timeout=10.0s", payload["message"])
+        self.assertIn("OSError", payload["message"])
+        self.assertIn("DNS lookup failed", payload["message"])
+        self.assertIsNone(payload["metadata"]["status_code"])
+
+    def test_openrouter_validate_api_key_returns_models_on_successful_response(self) -> None:
+        adapter = OpenRouterAdapter()
+        client = FakeHttpClient(
+            {
+                adapter.models_url(): FakeResponse(
+                    status_code=200,
+                    payload={
+                        "data": [
+                            {"id": "openrouter/auto", "name": "Auto"},
+                            {"id": "openai/gpt-4o-mini", "name": "GPT-4o Mini"},
+                        ]
+                    },
+                )
+            }
+        )
+
+        result = adapter.validate_api_key("router-key", client=client)
+
+        self.assertTrue(result.ok)
+        self.assertEqual(("openrouter/auto", "openai/gpt-4o-mini"), tuple(model.id for model in result.models))
 
     def test_r1_plan1_plan2_openrouter_full_validation_flow_succeeds(self) -> None:
         adapter = OpenRouterAdapter()

@@ -85,6 +85,24 @@ class AgentMemoryTest(unittest.TestCase):
             self.assertTrue((paths.knowledge_dir / "gpu.md").exists())
             self.assertTrue((paths.sessions_dir / "alpha.md").exists())
 
+    def test_materialize_memory_view_removes_stale_managed_files_but_keeps_other_cache_files(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            paths = initialize_agent_memory(Path(temp_dir))
+            stale_session = paths.sessions_dir / "old.md"
+            stale_session.write_text("old\n", encoding="utf-8")
+            repo_cache = paths.knowledge_dir / "repos.json"
+            repo_cache.write_text('{"repos":[]}\n', encoding="utf-8")
+
+            materialize_memory_view(
+                paths,
+                (
+                    (AGENTS_FILE_NAME, "# Contract\n\nKeep memory concise."),
+                ),
+            )
+
+            self.assertFalse(stale_session.exists())
+            self.assertTrue(repo_cache.exists())
+
     def test_materialize_memory_file_rejects_unsupported_paths(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             paths = initialize_agent_memory(Path(temp_dir))

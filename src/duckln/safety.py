@@ -41,13 +41,16 @@ BLOCKED_COMMAND_PATTERNS: tuple[tuple[str, str], ...] = (
 
 HOOTLWO_DIAGNOSTIC_PATTERNS: tuple[tuple[str, SafetyClass, str], ...] = (
     (r"^\s*python(\d+(\.\d+)*)?\s+--version\s*$", SafetyClass.S0, "Python version check."),
+    (r"^\s*[A-Za-z0-9._/-]+/python\s+--version\s*$", SafetyClass.S0, "Project Python version check."),
     (r"^\s*python(\d+(\.\d+)*)?\s+-m\s+pip\s+--version\s*$", SafetyClass.S0, "Pip version check."),
+    (r"^\s*[A-Za-z0-9._/-]+/python\s+-m\s+pip\s+--version\s*$", SafetyClass.S0, "Project pip version check."),
     (r"^\s*pip\s+--version\s*$", SafetyClass.S0, "Pip version check."),
     (r"^\s*pip\s+list\s*$", SafetyClass.S0, "Installed package listing."),
     (r"^\s*pip\s+show\s+[A-Za-z0-9._-]+\s*$", SafetyClass.S0, "Package metadata check."),
     (r"^\s*python(\d+(\.\d+)*)?\s+-m\s+pip\s+show\s+[A-Za-z0-9._-]+\s*$", SafetyClass.S0, "Package metadata check."),
     (r"^\s*which\s+[A-Za-z0-9._/-]+\s*$", SafetyClass.S0, "Binary path check."),
     (r"^\s*pwd\s*$", SafetyClass.S0, "Working directory check."),
+    (r"^\s*test\s+-(d|f|x)\s+.+$", SafetyClass.S0, "Filesystem existence check."),
 )
 
 HOOTLWO_INSTALL_PATTERNS: tuple[tuple[str, SafetyClass, str], ...] = (
@@ -56,6 +59,17 @@ HOOTLWO_INSTALL_PATTERNS: tuple[tuple[str, SafetyClass, str], ...] = (
         r"^\s*python(\d+(\.\d+)*)?\s+-m\s+pip\s+install\s+[A-Za-z0-9._\-\[\]=<>! ]+\s*$",
         SafetyClass.S1,
         "Package install command.",
+    ),
+    (r"^\s*python(\d+(\.\d+)*)?\s+-m\s+venv\s+[A-Za-z0-9._/-]+\s*$", SafetyClass.S1, "Virtualenv creation command."),
+    (
+        r"^\s*[A-Za-z0-9._/-]+/python\s+-m\s+pip\s+install\s+-r\s+[A-Za-z0-9._/-]+\s*$",
+        SafetyClass.S1,
+        "Requirements install command.",
+    ),
+    (
+        r"^\s*[A-Za-z0-9._/-]+/python\s+-m\s+pip\s+install\s+-e\s+\.\s*$",
+        SafetyClass.S1,
+        "Editable install command.",
     ),
 )
 

@@ -9,6 +9,7 @@ import unittest
 
 from agent.probe import GpuProbeState, SystemProbe
 from state.access import (
+    clear_memory_scope,
     initialize_managed_memory_state,
     materialize_managed_memory_state,
     read_config_snapshot,
@@ -122,6 +123,71 @@ class StateAccessTest(unittest.TestCase):
 
             self.assertIn("Virtualenv fix", skill_path.read_text(encoding="utf-8"))
             self.assertIn("CUDA check", knowledge_path.read_text(encoding="utf-8"))
+
+    def test_clear_memory_scope_session_removes_session_rows_and_files(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            write_session_summary_state(
+                temp_dir,
+                session_id="alpha setup",
+                summary="Saved the short reusable setup note.",
+            )
+
+            result = clear_memory_scope(temp_dir, scope="session")
+
+            self.assertTrue(result.cleared)
+            self.assertEqual("Cleared session history and session summaries.", result.summary)
+            self.assertFalse((Path(temp_dir) / "memory" / "sessions" / "alpha-setup.md").exists())
+
+    def test_clear_memory_scope_project_uses_latest_repo_state(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            from state.store import initialize_state_store
+
+            store = initialize_state_store(Path(temp_dir))
+            store.upsert_repo_state(
+                repo_key="https://example.com/alpha",
+                status="ready",
+                summary="Alpha ready.",
+            )
+            store.record_run(
+                run_id="repo-alpha",
+                command_name="/repos",
+                status="ready",
+                summary="Alpha run.",
+                repo_key="https://example.com/alpha",
+            )
+
+            result = clear_memory_scope(temp_dir, scope="project")
+
+            self.assertTrue(result.cleared)
+            self.assertEqual("Cleared tracked memory for the current project.", result.summary)
+            with sqlite3.connect(temp_dir + "/state/duckln-state.sqlite3") as connection:
+                self.assertEqual(0, connection.execute("SELECT COUNT(*) FROM repo_state").fetchone()[0])
+                self.assertEqual(0, connection.execute("SELECT COUNT(*) FROM run_history").fetchone()[0])
+
+    def test_clear_memory_scope_factory_reseeds_agents_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            contract_source = Path(temp_dir) / "AGENTS.md"
+            contract_source.write_text("# Root Contract\n\nStay concise.\n", encoding="utf-8")
+            write_skill_memory_state(
+                temp_dir,
+                slug="venv-fix",
+                title="Virtualenv fix",
+                summary="Use the repo-local interpreter first.",
+            )
+            write_config_snapshot(temp_dir, {"provider": "openai"})
+
+            result = clear_memory_scope(temp_dir, scope="factory", contract_source=contract_source)
+
+            self.assertTrue(result.cleared)
+            self.assertEqual("Cleared Duckln state and reset managed memory.", result.summary)
+            self.assertEqual(
+                "# Root Contract\n\nStay concise.",
+                (Path(temp_dir) / "memory" / "AGENTS.md").read_text(encoding="utf-8").strip(),
+            )
+            self.assertFalse((Path(temp_dir) / "memory" / "skills" / "venv-fix.md").exists())
+            with sqlite3.connect(temp_dir + "/state/duckln-state.sqlite3") as connection:
+                self.assertEqual(0, connection.execute("SELECT COUNT(*) FROM config_state").fetchone()[0])
+                self.assertEqual(1, connection.execute("SELECT COUNT(*) FROM managed_memory").fetchone()[0])
 
 
 if __name__ == "__main__":

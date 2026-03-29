@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from os import PathLike
 from pathlib import Path
 
@@ -18,6 +19,15 @@ from agent.memory import (
 )
 from agent.probe import SystemProbe
 from state.store import initialize_state_store
+
+
+@dataclass(frozen=True)
+class MemoryClearResult:
+    """Outcome of a bounded memory-clear operation."""
+
+    cleared: bool
+    scope: str
+    summary: str
 
 
 def _as_path(config_dir: str | PathLike[str] | Path) -> Path:
@@ -173,6 +183,57 @@ def read_session_summary_state(
     return read_session_summary(resolve_agent_memory_paths(resolved_config_dir), session_id=session_id)
 
 
+def clear_memory_scope(
+    config_dir: str | PathLike[str] | Path,
+    *,
+    scope: str,
+    contract_source: Path | None = None,
+) -> MemoryClearResult:
+    """Clear a bounded memory scope, resync files, and reclaim SQLite space."""
+
+    resolved_config_dir = _as_path(config_dir)
+    store = initialize_state_store(resolved_config_dir)
+
+    if scope == "session":
+        deleted_rows = store.clear_session_history()
+        materialize_managed_memory_state(resolved_config_dir)
+        store.vacuum()
+        return MemoryClearResult(
+            cleared=True,
+            scope=scope,
+            summary="Cleared session history and session summaries." if deleted_rows else "Session history was already clear.",
+        )
+
+    if scope == "project":
+        repo_state = store.get_latest_repo_state()
+        if repo_state is None:
+            return MemoryClearResult(
+                cleared=False,
+                scope=scope,
+                summary="No tracked project memory was found.",
+            )
+        deleted_rows = store.clear_project_state(repo_key=repo_state.repo_key)
+        materialize_managed_memory_state(resolved_config_dir)
+        store.vacuum()
+        return MemoryClearResult(
+            cleared=True,
+            scope=scope,
+            summary="Cleared tracked memory for the current project." if deleted_rows else "Current project memory was already clear.",
+        )
+
+    if scope == "factory":
+        store.clear_factory_state()
+        initialize_managed_memory_state(resolved_config_dir, contract_source=contract_source)
+        store.vacuum()
+        return MemoryClearResult(
+            cleared=True,
+            scope=scope,
+            summary="Cleared Duckln state and reset managed memory.",
+        )
+
+    raise ValueError(f"Unsupported memory clear scope: {scope}")
+
+
 def _upsert_and_materialize_memory(
     config_dir: str | PathLike[str] | Path,
     *,
@@ -192,8 +253,17 @@ def _upsert_and_materialize_memory(
         title=title,
         content=content,
     )
+    materialize_managed_memory_state(resolved_config_dir)
     paths = resolve_agent_memory_paths(resolved_config_dir)
-    return materialize_memory_view(paths, ((relative_path, content),))[0]
+    if relative_path == AGENTS_FILE_NAME:
+        return paths.agents_file
+    if relative_path.startswith(f"{SKILLS_DIR_NAME}/"):
+        return paths.skills_dir / relative_path.removeprefix(f"{SKILLS_DIR_NAME}/")
+    if relative_path.startswith(f"{KNOWLEDGE_DIR_NAME}/"):
+        return paths.knowledge_dir / relative_path.removeprefix(f"{KNOWLEDGE_DIR_NAME}/")
+    if relative_path.startswith(f"{SESSIONS_DIR_NAME}/"):
+        return paths.sessions_dir / relative_path.removeprefix(f"{SESSIONS_DIR_NAME}/")
+    raise ValueError(f"Unsupported managed memory path: {relative_path}")
 
 
 def _load_contract_content(contract_source: Path | None) -> str:
