@@ -14,6 +14,7 @@ from state.repo_catalog import (
     LaunchCatalogOverrides,
     LaunchCatalogSeedEntry,
     RepoCatalogRecord,
+    _extract_github_repo_path,
     generate_bundled_repo_catalog,
     initialize_local_repo_catalog_cache,
     load_bundled_repo_catalog,
@@ -44,10 +45,20 @@ class FakeGitHubClient:
         self.responses = responses
         self.called_urls: list[str] = []
         self.called_headers: list[dict[str, str]] = []
+        self.called_follow_redirects: list[bool | None] = []
 
-    def get(self, url: str, *, headers: dict[str, str], params: dict[str, str], timeout: float) -> FakeResponse:
+    def get(
+        self,
+        url: str,
+        *,
+        headers: dict[str, str],
+        params: dict[str, str],
+        timeout: float,
+        follow_redirects: bool | None = None,
+    ) -> FakeResponse:
         self.called_urls.append(url)
         self.called_headers.append(dict(headers))
+        self.called_follow_redirects.append(follow_redirects)
         if "q" in params:
             topic = params["q"].split("topic:", 1)[1].split()[0]
             response = self.responses[topic]
@@ -59,6 +70,20 @@ class FakeGitHubClient:
 
 
 class RepoCatalogTest(unittest.TestCase):
+    def test_extract_github_repo_path_preserves_repo_names_with_dots(self) -> None:
+        self.assertEqual(
+            "ggerganov/llama.cpp",
+            _extract_github_repo_path("https://github.com/ggerganov/llama.cpp"),
+        )
+        self.assertEqual(
+            "ggerganov/llama.cpp",
+            _extract_github_repo_path("https://github.com/ggerganov/llama.cpp/"),
+        )
+        self.assertEqual(
+            "ggerganov/llama.cpp",
+            _extract_github_repo_path("https://github.com/ggerganov/llama.cpp.git"),
+        )
+
     def test_load_bundled_repo_catalog_returns_strict_records(self) -> None:
         records = load_bundled_repo_catalog()
 
@@ -750,6 +775,18 @@ class RepoCatalogTest(unittest.TestCase):
                 "computer-vision": FakeResponse(200, {"items": []}),
                 "pytorch": FakeResponse(200, {"items": []}),
                 "huggingface": FakeResponse(200, {"items": []}),
+                "https://api.github.com/repos/example/topic-hit": FakeResponse(
+                    200,
+                    {
+                        "name": "topic-hit",
+                        "html_url": "https://github.com/example/topic-hit",
+                        "stargazers_count": 50,
+                        "description": "Inference demo",
+                        "language": "Python",
+                        "topics": ["machine-learning", "inference"],
+                        "updated_at": "2026-03-20T12:00:00Z",
+                    },
+                ),
                 "https://api.github.com/repos/example/seed-only": FakeResponse(
                     200,
                     {
@@ -848,6 +885,7 @@ class RepoCatalogTest(unittest.TestCase):
         self.assertEqual(seed_repo_url, records[0].repo_url)
         self.assertIn("https://api.github.com/repos/ggerganov/llama.cpp", client.called_urls)
         self.assertTrue(all(url.startswith("https://api.github.com/") for url in client.called_urls))
+        self.assertTrue(all(follow_redirects is True for follow_redirects in client.called_follow_redirects))
 
     def test_generate_bundled_repo_catalog_uses_authenticated_headers_for_topic_and_seed_requests(self) -> None:
         client = FakeGitHubClient(
@@ -910,6 +948,8 @@ class RepoCatalogTest(unittest.TestCase):
             records = generate_bundled_repo_catalog(client=client, per_topic_limit=10)
 
         self.assertEqual(("topic-hit", "seed-only"), tuple(record.name for record in records))
+        self.assertIn("https://api.github.com/repos/example/topic-hit", client.called_urls)
+        self.assertIn("https://api.github.com/repos/example/seed-only", client.called_urls)
         self.assertTrue(client.called_headers)
         self.assertTrue(all(headers.get("Authorization") == "Bearer test-token" for headers in client.called_headers))
         self.assertTrue(all(headers.get("Accept") == "application/vnd.github+json" for headers in client.called_headers))
@@ -932,9 +972,12 @@ class RepoCatalogTest(unittest.TestCase):
             }
         )
 
-        with self.assertRaisesRegex(
-            Exception,
-            "GitHub topic fetch failed for 'stable-diffusion' \\(HTTP 403\\): \\{\"message\":\"API rate limit exceeded\"\\}",
+        with (
+            patch("sys.stderr"),
+            self.assertRaisesRegex(
+                Exception,
+                "GitHub topic fetch failed for 'stable-diffusion' \\(HTTP 403\\): \\{\"message\":\"API rate limit exceeded\"\\}",
+            ),
         ):
             generate_bundled_repo_catalog(client=client, per_topic_limit=10)
 
@@ -954,9 +997,12 @@ class RepoCatalogTest(unittest.TestCase):
             }
         )
 
-        with self.assertRaisesRegex(
-            Exception,
-            "GitHub topic fetch failed for 'stable-diffusion' \\(HTTP 403\\): \\{\"message\":\"Resource protected by organization SSO\"\\}",
+        with (
+            patch("sys.stderr"),
+            self.assertRaisesRegex(
+                Exception,
+                "GitHub topic fetch failed for 'stable-diffusion' \\(HTTP 403\\): \\{\"message\":\"Resource protected by organization SSO\"\\}",
+            ),
         ):
             generate_bundled_repo_catalog(client=client, per_topic_limit=10)
 
@@ -993,12 +1039,110 @@ class RepoCatalogTest(unittest.TestCase):
                     overrides={},
                 ),
             ),
+            patch("sys.stderr"),
         ):
             with self.assertRaisesRegex(
                 Exception,
                 "GitHub repo fetch failed for 'https://github.com/example/private-seed' \\(HTTP 403\\): \\{\"message\":\"Secondary rate limit\"\\}",
             ):
                 generate_bundled_repo_catalog(client=client, per_topic_limit=10)
+
+    def test_generate_bundled_repo_catalog_skips_failed_seed_repo_and_keeps_successful_records(self) -> None:
+        client = FakeGitHubClient(
+            {
+                "machine-learning": FakeResponse(200, {"items": []}),
+                "deep-learning": FakeResponse(200, {"items": []}),
+                "llm": FakeResponse(200, {"items": []}),
+                "stable-diffusion": FakeResponse(200, {"items": []}),
+                "computer-vision": FakeResponse(200, {"items": []}),
+                "pytorch": FakeResponse(200, {"items": []}),
+                "huggingface": FakeResponse(200, {"items": []}),
+                "https://api.github.com/repos/example/good-seed": FakeResponse(
+                    200,
+                    {
+                        "name": "good-seed",
+                        "html_url": "https://github.com/example/good-seed",
+                        "stargazers_count": 42,
+                        "description": "Working repo metadata",
+                        "language": "Python",
+                        "topics": ["llm"],
+                        "updated_at": "2026-03-20T12:00:00Z",
+                    },
+                ),
+                "https://api.github.com/repos/example/bad-seed": FakeResponse(
+                    301,
+                    {"message": "Moved permanently"},
+                    text='{"message":"Moved permanently"}',
+                ),
+            }
+        )
+
+        with (
+            patch(
+                "state.repo_catalog.load_launch_catalog_seed",
+                return_value=(
+                    LaunchCatalogSeedEntry(name="good-seed", repo_url="https://github.com/example/good-seed"),
+                    LaunchCatalogSeedEntry(name="bad-seed", repo_url="https://github.com/example/bad-seed"),
+                ),
+            ),
+            patch(
+                "state.repo_catalog.load_launch_catalog_overrides",
+                return_value=LaunchCatalogOverrides(
+                    allowlist=frozenset({"good-seed", "bad-seed"}),
+                    blocklist=frozenset(),
+                    overrides={},
+                ),
+            ),
+            patch("sys.stderr"),
+        ):
+            records = generate_bundled_repo_catalog(client=client, per_topic_limit=10)
+
+        self.assertEqual(("good-seed",), tuple(record.name for record in records))
+        self.assertIn("https://api.github.com/repos/example/good-seed", client.called_urls)
+        self.assertIn("https://api.github.com/repos/example/bad-seed", client.called_urls)
+        self.assertNotIn("https://github.com/example/good-seed", client.called_urls)
+        self.assertNotIn("https://github.com/example/bad-seed", client.called_urls)
+
+    def test_generate_bundled_repo_catalog_fails_only_when_zero_seed_repos_are_fetched(self) -> None:
+        client = FakeGitHubClient(
+            {
+                "machine-learning": FakeResponse(200, {"items": []}),
+                "deep-learning": FakeResponse(200, {"items": []}),
+                "llm": FakeResponse(200, {"items": []}),
+                "stable-diffusion": FakeResponse(200, {"items": []}),
+                "computer-vision": FakeResponse(200, {"items": []}),
+                "pytorch": FakeResponse(200, {"items": []}),
+                "huggingface": FakeResponse(200, {"items": []}),
+                "https://api.github.com/repos/example/bad-seed": FakeResponse(
+                    301,
+                    {"message": "Moved permanently"},
+                    text='{"message":"Moved permanently"}',
+                ),
+            }
+        )
+
+        with (
+            patch(
+                "state.repo_catalog.load_launch_catalog_seed",
+                return_value=(
+                    LaunchCatalogSeedEntry(name="bad-seed", repo_url="https://github.com/example/bad-seed"),
+                ),
+            ),
+            patch(
+                "state.repo_catalog.load_launch_catalog_overrides",
+                return_value=LaunchCatalogOverrides(
+                    allowlist=frozenset({"bad-seed"}),
+                    blocklist=frozenset(),
+                    overrides={},
+                ),
+            ),
+            patch("sys.stderr"),
+            self.assertRaisesRegex(
+                Exception,
+                "Catalog generation failed - zero repos fetched successfully.*GitHub repo fetch failed for 'https://github.com/example/bad-seed' \\(HTTP 301\\)",
+            ),
+        ):
+            generate_bundled_repo_catalog(client=client, per_topic_limit=10)
 
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import sys
 from typing import Any
 from urllib.parse import urlparse
 
@@ -283,24 +284,41 @@ def generate_bundled_repo_catalog(
 
     launch_overrides = load_launch_catalog_overrides()
     seed_entries = load_launch_catalog_seed()
-    topic_candidates = _fetch_topic_candidate_payloads(client=client, per_topic_limit=per_topic_limit)
+    warnings: list[str] = []
+    topic_candidates = _fetch_topic_candidate_payloads(
+        client=client,
+        per_topic_limit=per_topic_limit,
+        warnings=warnings,
+    )
     normalized_records_by_url: dict[str, RepoCatalogRecord] = {}
     for seed_entry in seed_entries:
         if seed_entry.name.lower() in launch_overrides.blocklist:
             continue
 
-        payload, topic = _resolve_seed_repo_payload(
-            seed_entry,
-            client=client,
-            topic_candidates=topic_candidates,
-        )
-        record = _normalize_github_repo(
-            payload,
-            topic=topic,
-            bundled_launch_catalog=True,
-            metadata_override=launch_overrides.overrides.get(seed_entry.name.lower()),
-        )
+        try:
+            payload, topic = _resolve_seed_repo_payload(
+                seed_entry,
+                client=client,
+                topic_candidates=topic_candidates,
+            )
+            record = _normalize_github_repo(
+                payload,
+                topic=topic,
+                bundled_launch_catalog=True,
+                metadata_override=launch_overrides.overrides.get(seed_entry.name.lower()),
+            )
+        except Exception as exc:
+            _warn_bundled_repo_catalog_skip(
+                f"Warning: {seed_entry.name} failed - {exc} - skipping",
+                warnings=warnings,
+            )
+            continue
+
         normalized_records_by_url[record.repo_url] = record
+
+    if not normalized_records_by_url:
+        detail = f" Warnings: {' | '.join(warnings)}" if warnings else ""
+        raise RepoCatalogRefreshError(f"Catalog generation failed - zero repos fetched successfully.{detail}")
 
     return tuple(sorted(normalized_records_by_url.values(), key=lambda item: (-item.stars, item.name.lower())))
 
@@ -374,10 +392,20 @@ def _fetch_topic_candidate_payloads(
     *,
     client: Any | None,
     per_topic_limit: int,
+    warnings: list[str] | None = None,
 ) -> dict[str, tuple[dict[str, Any], str]]:
     candidates: dict[str, tuple[dict[str, Any], str]] = {}
     for topic in GITHUB_REPO_TOPICS:
-        for item in _search_github_topic(topic, client=client, per_page=per_topic_limit):
+        try:
+            topic_items = _search_github_topic(topic, client=client, per_page=per_topic_limit)
+        except Exception as exc:
+            _warn_bundled_repo_catalog_skip(
+                f"Warning: topic '{topic}' failed - {exc} - skipping",
+                warnings=warnings,
+            )
+            continue
+
+        for item in topic_items:
             repo_url = str(item.get("html_url") or "").strip()
             if not repo_url:
                 continue
@@ -416,12 +444,17 @@ def _resolve_seed_repo_payload(
     topic_candidates: dict[str, tuple[dict[str, Any], str]],
 ) -> tuple[dict[str, Any], str]:
     cached_candidate = topic_candidates.get(seed_entry.repo_url)
-    if cached_candidate is not None:
+
+    try:
+        payload = _fetch_github_repo_by_url(seed_entry.repo_url, client=client)
+    except Exception:
+        if cached_candidate is None:
+            raise
         payload, topic = cached_candidate
         return _merge_seed_into_github_payload(seed_entry, payload), topic
 
-    payload = _fetch_github_repo_by_url(seed_entry.repo_url, client=client)
-    return _merge_seed_into_github_payload(seed_entry, payload), _infer_topic_from_payload(payload)
+    topic = cached_candidate[1] if cached_candidate is not None else _infer_topic_from_payload(payload)
+    return _merge_seed_into_github_payload(seed_entry, payload), topic
 
 
 def _merge_seed_into_github_payload(seed_entry: LaunchCatalogSeedEntry, payload: dict[str, Any]) -> dict[str, Any]:
@@ -528,15 +561,25 @@ def _github_get(path: str, *, params: dict[str, str], client: Any | None) -> Any
     headers = _github_request_headers()
 
     if client is not None:
-        return client.get(url, headers=headers, params=params, timeout=10.0)
+        return _github_client_get(client, url=url, headers=headers, params=params)
 
     try:
         import httpx
     except ModuleNotFoundError as exc:
         raise RuntimeError("httpx is required for repo catalog refresh.") from exc
 
-    with httpx.Client(headers=headers, timeout=10.0) as http_client:
+    with httpx.Client(headers=headers, timeout=10.0, follow_redirects=True) as http_client:
         return http_client.get(url, params=params)
+
+
+def _github_client_get(client: Any, *, url: str, headers: dict[str, str], params: dict[str, str]) -> Any:
+    try:
+        return client.get(url, headers=headers, params=params, timeout=10.0, follow_redirects=True)
+    except TypeError:
+        try:
+            return client.get(url, headers=headers, params=params, timeout=10.0, allow_redirects=True)
+        except TypeError:
+            return client.get(url, headers=headers, params=params, timeout=10.0)
 
 
 def _github_request_headers() -> dict[str, str]:
@@ -575,6 +618,12 @@ def _github_response_detail(response: Any) -> str:
         return json.dumps(payload, separators=(",", ":"))
     except TypeError:
         return str(payload).strip()
+
+
+def _warn_bundled_repo_catalog_skip(message: str, *, warnings: list[str] | None) -> None:
+    print(message, file=sys.stderr)
+    if warnings is not None:
+        warnings.append(message)
 
 
 def _normalize_github_repo(
