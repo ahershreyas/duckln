@@ -427,7 +427,7 @@ def _resolve_seed_repo_payload(
 def _merge_seed_into_github_payload(seed_entry: LaunchCatalogSeedEntry, payload: dict[str, Any]) -> dict[str, Any]:
     merged = dict(payload)
     merged.setdefault("name", seed_entry.name)
-    merged.setdefault("html_url", seed_entry.repo_url)
+    merged["html_url"] = seed_entry.repo_url
     return merged
 
 

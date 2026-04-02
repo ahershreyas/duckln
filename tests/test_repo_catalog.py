@@ -793,6 +793,7 @@ class RepoCatalogTest(unittest.TestCase):
         self.assertEqual(42, records[0].stars)
 
     def test_generate_bundled_repo_catalog_fetches_seed_metadata_from_github_api_repo_endpoint(self) -> None:
+        seed_repo_url = "https://github.com/ggerganov/llama.cpp.git"
         client = FakeGitHubClient(
             {
                 "machine-learning": FakeResponse(200, {"items": []}),
@@ -823,7 +824,7 @@ class RepoCatalogTest(unittest.TestCase):
                 return_value=(
                     LaunchCatalogSeedEntry(
                         name="llama.cpp",
-                        repo_url="https://github.com/ggerganov/llama.cpp/",
+                        repo_url=seed_repo_url,
                     ),
                 ),
             ),
@@ -844,8 +845,9 @@ class RepoCatalogTest(unittest.TestCase):
             records = generate_bundled_repo_catalog(client=client, per_topic_limit=10)
 
         self.assertEqual(("llama.cpp",), tuple(record.name for record in records))
+        self.assertEqual(seed_repo_url, records[0].repo_url)
         self.assertIn("https://api.github.com/repos/ggerganov/llama.cpp", client.called_urls)
-        self.assertNotIn("https://github.com/ggerganov/llama.cpp/", client.called_urls)
+        self.assertTrue(all(url.startswith("https://api.github.com/") for url in client.called_urls))
 
     def test_generate_bundled_repo_catalog_uses_authenticated_headers_for_topic_and_seed_requests(self) -> None:
         client = FakeGitHubClient(
