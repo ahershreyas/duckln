@@ -6,25 +6,34 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from duckln.config import ENV_CONFIG_DIR, load_raw_config, resolve_config_paths
 from state.repo_catalog import (
+    LaunchCatalogMetadataOverride,
+    LaunchCatalogOverrides,
+    LaunchCatalogSeedEntry,
     RepoCatalogRecord,
     generate_bundled_repo_catalog,
     initialize_local_repo_catalog_cache,
     load_bundled_repo_catalog,
+    load_launch_catalog_overrides,
+    load_launch_catalog_seed,
     load_local_repo_catalog,
     load_sorted_local_repo_catalog,
     refresh_local_repo_catalog,
     resolve_bundled_repo_catalog_path,
+    resolve_launch_catalog_overrides_path,
+    resolve_launch_catalog_seed_path,
     resolve_local_repo_catalog_cache_path,
 )
 
 
 class FakeResponse:
-    def __init__(self, status_code: int, payload: dict) -> None:
+    def __init__(self, status_code: int, payload: dict, text: str = "") -> None:
         self.status_code = status_code
         self._payload = payload
+        self.text = text
 
     def json(self) -> dict:
         return self._payload
@@ -33,10 +42,17 @@ class FakeResponse:
 class FakeGitHubClient:
     def __init__(self, responses: dict[str, object]) -> None:
         self.responses = responses
+        self.called_urls: list[str] = []
+        self.called_headers: list[dict[str, str]] = []
 
     def get(self, url: str, *, headers: dict[str, str], params: dict[str, str], timeout: float) -> FakeResponse:
-        topic = params["q"].split("topic:", 1)[1].split()[0]
-        response = self.responses[topic]
+        self.called_urls.append(url)
+        self.called_headers.append(dict(headers))
+        if "q" in params:
+            topic = params["q"].split("topic:", 1)[1].split()[0]
+            response = self.responses[topic]
+        else:
+            response = self.responses[url]
         if isinstance(response, Exception):
             raise response
         return response
@@ -47,7 +63,10 @@ class RepoCatalogTest(unittest.TestCase):
         records = load_bundled_repo_catalog()
 
         self.assertTrue(records)
+        self.assertGreaterEqual(len(records), 20)
+        self.assertLessEqual(len(records), 25)
         self.assertTrue(all(isinstance(record, RepoCatalogRecord) for record in records))
+        self.assertNotIn("ollama", {record.name.lower() for record in records})
         self.assertEqual(
             {
                 "name",
@@ -57,9 +76,31 @@ class RepoCatalogTest(unittest.TestCase):
                 "category",
                 "framework",
                 "last_updated",
+                "warning",
             },
             set(RepoCatalogRecord.__dataclass_fields__),
         )
+
+    def test_load_launch_catalog_overrides_reads_curated_allowlist_blocklist_and_overrides(self) -> None:
+        overrides = load_launch_catalog_overrides()
+
+        self.assertNotIn("ollama", overrides.allowlist)
+        self.assertIn("ollama", overrides.blocklist)
+        self.assertIn("openvino", overrides.blocklist)
+        self.assertIn("whisperx", overrides.allowlist)
+        self.assertIn("anythingllm", overrides.allowlist)
+        self.assertEqual(resolve_launch_catalog_overrides_path().name, "launch_catalog_overrides.json")
+        self.assertEqual("Python/vLLM", overrides.overrides["vllm"].framework)
+        self.assertEqual("GPU recommended", overrides.overrides["vllm"].warning)
+        self.assertEqual("Multi-service setup", overrides.overrides["autogpt"].warning)
+
+    def test_load_launch_catalog_seed_reads_curated_seed_repos(self) -> None:
+        seed_entries = load_launch_catalog_seed()
+
+        self.assertGreaterEqual(len(seed_entries), 20)
+        self.assertEqual(resolve_launch_catalog_seed_path().name, "launch_catalog_seed.json")
+        self.assertEqual("AutoGPT", seed_entries[0].name)
+        self.assertEqual("https://github.com/Significant-Gravitas/AutoGPT", seed_entries[0].repo_url)
 
     def test_initialize_local_repo_catalog_cache_copies_bundled_asset_once(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -304,11 +345,11 @@ class RepoCatalogTest(unittest.TestCase):
                     {
                         "items": [
                             {
-                                "name": "FastChat",
-                                "html_url": "https://github.com/lm-sys/FastChat",
+                                "name": "open-webui",
+                                "html_url": "https://github.com/open-webui/open-webui",
                                 "stargazers_count": 70,
-                                "description": "Open platform for serving chat models",
-                                "language": "Python",
+                                "description": "A practical demo API for local model serving",
+                                "language": "TypeScript",
                                 "topics": ["llm"],
                                 "updated_at": "2026-03-18T12:00:00Z",
                             },
@@ -331,9 +372,16 @@ class RepoCatalogTest(unittest.TestCase):
             }
         )
 
-        records = generate_bundled_repo_catalog(client=client, per_topic_limit=10)
+        with patch(
+            "state.repo_catalog.load_launch_catalog_seed",
+            return_value=(
+                LaunchCatalogSeedEntry(name="inference-api", repo_url="https://github.com/example/inference-api"),
+                LaunchCatalogSeedEntry(name="open-webui", repo_url="https://github.com/open-webui/open-webui"),
+            ),
+        ):
+            records = generate_bundled_repo_catalog(client=client, per_topic_limit=10)
 
-        self.assertEqual(("inference-api", "FastChat"), tuple(record.name for record in records))
+        self.assertEqual(("inference-api", "open-webui"), tuple(record.name for record in records))
         self.assertEqual((80, 70), tuple(record.stars for record in records))
 
     def test_generate_bundled_repo_catalog_deduplicates_by_repo_url_and_sorts_descending(self) -> None:
@@ -388,10 +436,567 @@ class RepoCatalogTest(unittest.TestCase):
             }
         )
 
-        records = generate_bundled_repo_catalog(client=client, per_topic_limit=10)
+        with patch(
+            "state.repo_catalog.load_launch_catalog_seed",
+            return_value=(
+                LaunchCatalogSeedEntry(name="shared", repo_url="https://github.com/example/shared"),
+                LaunchCatalogSeedEntry(name="llama.cpp", repo_url="https://github.com/ggerganov/llama.cpp"),
+            ),
+        ):
+            records = generate_bundled_repo_catalog(client=client, per_topic_limit=10)
 
         self.assertEqual(("llama.cpp", "shared"), tuple(record.name for record in records))
         self.assertEqual(2, len(records))
+
+    def test_generate_bundled_repo_catalog_excludes_blocked_names_languages_and_learning_repos(self) -> None:
+        client = FakeGitHubClient(
+            {
+                "machine-learning": FakeResponse(
+                    200,
+                    {
+                        "items": [
+                            {
+                                "name": "firecrawl",
+                                "html_url": "https://github.com/example/firecrawl",
+                                "stargazers_count": 100,
+                                "description": "API for web data extraction",
+                                "language": "TypeScript",
+                                "topics": ["machine-learning", "api"],
+                                "updated_at": "2026-03-20T12:00:00Z",
+                            },
+                            {
+                                "name": "practical-python-api",
+                                "html_url": "https://github.com/example/practical-python-api",
+                                "stargazers_count": 90,
+                                "description": "Inference API for deployment",
+                                "language": "Python",
+                                "topics": ["machine-learning", "inference", "deployment"],
+                                "updated_at": "2026-03-20T12:00:00Z",
+                            },
+                        ]
+                    },
+                ),
+                "deep-learning": FakeResponse(
+                    200,
+                    {
+                        "items": [
+                            {
+                                "name": "keras",
+                                "html_url": "https://github.com/keras-team/keras",
+                                "stargazers_count": 110,
+                                "description": "Deep learning framework for Python",
+                                "language": "Python",
+                                "topics": ["deep-learning", "framework", "api"],
+                                "updated_at": "2026-03-20T12:00:00Z",
+                            },
+                            {
+                                "name": "vision-tutorial",
+                                "html_url": "https://github.com/example/vision-tutorial",
+                                "stargazers_count": 95,
+                                "description": "Beginner tutorial and guide for model serving",
+                                "language": "Python",
+                                "topics": ["deep-learning", "tutorial", "serving"],
+                                "updated_at": "2026-03-20T12:00:00Z",
+                            },
+                            {
+                                "name": "frontend-demo",
+                                "html_url": "https://github.com/example/frontend-demo",
+                                "stargazers_count": 85,
+                                "description": "Demo API for inference",
+                                "language": "JavaScript",
+                                "topics": ["deep-learning", "demo", "api"],
+                                "updated_at": "2026-03-20T12:00:00Z",
+                            },
+                        ]
+                    },
+                ),
+                "llm": FakeResponse(
+                    200,
+                    {
+                        "items": [
+                            {
+                                "name": "agents-course",
+                                "html_url": "https://github.com/example/agents-course",
+                                "stargazers_count": 120,
+                                "description": "Course material for building agents",
+                                "language": "Python",
+                                "topics": ["llm", "course"],
+                                "updated_at": "2026-03-20T12:00:00Z",
+                            }
+                        ]
+                    },
+                ),
+                "stable-diffusion": FakeResponse(200, {"items": []}),
+                "computer-vision": FakeResponse(
+                    200,
+                    {
+                        "items": [
+                            {
+                                "name": "mediapipe",
+                                "html_url": "https://github.com/google-ai-edge/mediapipe",
+                                "stargazers_count": 130,
+                                "description": "Framework for building multimodal pipelines",
+                                "language": "C++",
+                                "topics": ["computer-vision", "framework"],
+                                "updated_at": "2026-03-20T12:00:00Z",
+                            }
+                        ]
+                    },
+                ),
+                "pytorch": FakeResponse(200, {"items": []}),
+                "huggingface": FakeResponse(
+                    200,
+                    {
+                        "items": [
+                            {
+                                "name": "datasets",
+                                "html_url": "https://github.com/huggingface/datasets",
+                                "stargazers_count": 115,
+                                "description": "Dataset library for machine learning",
+                                "language": "Python",
+                                "topics": ["huggingface", "datasets"],
+                                "updated_at": "2026-03-20T12:00:00Z",
+                            }
+                        ]
+                    },
+                ),
+            }
+        )
+
+        with patch(
+            "state.repo_catalog.load_launch_catalog_seed",
+            return_value=(LaunchCatalogSeedEntry(name="practical-python-api", repo_url="https://github.com/example/practical-python-api"),),
+        ):
+            records = generate_bundled_repo_catalog(client=client, per_topic_limit=10)
+
+        self.assertEqual(("practical-python-api",), tuple(record.name for record in records))
+
+    def test_generate_bundled_repo_catalog_applies_launch_category_overrides(self) -> None:
+        client = FakeGitHubClient(
+            {
+                "machine-learning": FakeResponse(200, {"items": []}),
+                "deep-learning": FakeResponse(200, {"items": []}),
+                "llm": FakeResponse(
+                    200,
+                    {
+                        "items": [
+                            {
+                                "name": "LocalAI",
+                                "html_url": "https://github.com/mudler/LocalAI",
+                                "stargazers_count": 40,
+                                "description": "Run local models with an OpenAI-compatible API",
+                                "language": "Go",
+                                "topics": ["llm", "api"],
+                                "updated_at": "2026-03-20T12:00:00Z",
+                            },
+                            {
+                                "name": "ollama",
+                                "html_url": "https://github.com/ollama/ollama",
+                                "stargazers_count": 39,
+                                "description": "A practical local model runner",
+                                "language": "Go",
+                                "topics": ["llm"],
+                                "updated_at": "2026-03-20T12:00:00Z",
+                            },
+                            {
+                                "name": "vllm",
+                                "html_url": "https://github.com/vllm-project/vllm",
+                                "stargazers_count": 41,
+                                "description": "A high-throughput and memory-efficient inference and serving engine for LLMs",
+                                "language": "Python",
+                                "topics": ["llm", "pytorch", "inference", "serving"],
+                                "updated_at": "2026-03-20T12:00:00Z",
+                            },
+                        ]
+                    },
+                ),
+                "stable-diffusion": FakeResponse(200, {"items": []}),
+                "computer-vision": FakeResponse(
+                    200,
+                    {
+                        "items": [
+                            {
+                                "name": "openvino",
+                                "html_url": "https://github.com/openvinotoolkit/openvino",
+                                "stargazers_count": 38,
+                                "description": "Toolkit for optimizing and deploying AI inference",
+                                "language": "C++",
+                                "topics": ["computer-vision", "inference", "deployment"],
+                                "updated_at": "2026-03-20T12:00:00Z",
+                            }
+                        ]
+                    },
+                ),
+                "pytorch": FakeResponse(200, {"items": []}),
+                "huggingface": FakeResponse(200, {"items": []}),
+            }
+        )
+
+        with (
+            patch(
+                "state.repo_catalog.load_launch_catalog_seed",
+                return_value=(
+                    LaunchCatalogSeedEntry(name="LocalAI", repo_url="https://github.com/mudler/LocalAI"),
+                    LaunchCatalogSeedEntry(name="ollama", repo_url="https://github.com/ollama/ollama"),
+                    LaunchCatalogSeedEntry(name="vllm", repo_url="https://github.com/vllm-project/vllm"),
+                    LaunchCatalogSeedEntry(name="openvino", repo_url="https://github.com/openvinotoolkit/openvino"),
+                ),
+            ),
+            patch(
+                "state.repo_catalog.load_launch_catalog_overrides",
+                return_value=LaunchCatalogOverrides(
+                    allowlist=frozenset(),
+                    blocklist=frozenset(),
+                    overrides={},
+                ),
+            ),
+        ):
+            records = generate_bundled_repo_catalog(client=client, per_topic_limit=10)
+        categories = {record.name: record.category for record in records}
+        frameworks = {record.name: record.framework for record in records}
+
+        self.assertEqual("LLM", categories["LocalAI"])
+        self.assertEqual("LLM", categories["ollama"])
+        self.assertEqual("LLM", categories["vllm"])
+        self.assertEqual("Computer Vision", categories["openvino"])
+        self.assertEqual("Go/Local Runtime", frameworks["LocalAI"])
+        self.assertEqual("Go/Ollama", frameworks["ollama"])
+        self.assertEqual("Python/vLLM", frameworks["vllm"])
+        self.assertEqual("C++/OpenVINO", frameworks["openvino"])
+
+    def test_generate_bundled_repo_catalog_applies_curated_allowlist_blocklist_and_warning_overrides(self) -> None:
+        client = FakeGitHubClient(
+            {
+                "machine-learning": FakeResponse(200, {"items": []}),
+                "deep-learning": FakeResponse(200, {"items": []}),
+                "llm": FakeResponse(
+                    200,
+                    {
+                        "items": [
+                            {
+                                "name": "ollama",
+                                "html_url": "https://github.com/ollama/ollama",
+                                "stargazers_count": 100,
+                                "description": "Run models locally.",
+                                "language": "Go",
+                                "topics": ["llm"],
+                                "updated_at": "2026-03-20T12:00:00Z",
+                            },
+                            {
+                                "name": "openvino",
+                                "html_url": "https://github.com/openvinotoolkit/openvino",
+                                "stargazers_count": 90,
+                                "description": "Toolkit for optimizing and deploying AI inference",
+                                "language": "C++",
+                                "topics": ["llm", "inference"],
+                                "updated_at": "2026-03-20T12:00:00Z",
+                            },
+                            {
+                                "name": "vllm",
+                                "html_url": "https://github.com/vllm-project/vllm",
+                                "stargazers_count": 80,
+                                "description": "A high-throughput and memory-efficient inference and serving engine for LLMs",
+                                "language": "Python",
+                                "topics": ["llm", "pytorch", "inference", "serving"],
+                                "updated_at": "2026-03-20T12:00:00Z",
+                            },
+                        ]
+                    },
+                ),
+                "stable-diffusion": FakeResponse(200, {"items": []}),
+                "computer-vision": FakeResponse(200, {"items": []}),
+                "pytorch": FakeResponse(200, {"items": []}),
+                "huggingface": FakeResponse(200, {"items": []}),
+            }
+        )
+
+        with (
+            patch(
+                "state.repo_catalog.load_launch_catalog_seed",
+                return_value=(
+                    LaunchCatalogSeedEntry(name="ollama", repo_url="https://github.com/ollama/ollama"),
+                    LaunchCatalogSeedEntry(name="openvino", repo_url="https://github.com/openvinotoolkit/openvino"),
+                    LaunchCatalogSeedEntry(name="vllm", repo_url="https://github.com/vllm-project/vllm"),
+                ),
+            ),
+            patch(
+                "state.repo_catalog.load_launch_catalog_overrides",
+                return_value=LaunchCatalogOverrides(
+                    allowlist=frozenset({"ollama"}),
+                    blocklist=frozenset({"openvino"}),
+                    overrides={
+                        "ollama": LaunchCatalogMetadataOverride(category="LLM", framework="Go/Ollama"),
+                        "vllm": LaunchCatalogMetadataOverride(category="LLM", framework="Python/vLLM", warning="GPU recommended"),
+                    },
+                ),
+            ),
+        ):
+            records = generate_bundled_repo_catalog(client=client, per_topic_limit=10)
+
+        self.assertEqual(("ollama", "vllm"), tuple(record.name for record in records))
+        warnings = {record.name: record.warning for record in records}
+        frameworks = {record.name: record.framework for record in records}
+        self.assertIsNone(warnings["ollama"])
+        self.assertEqual("GPU recommended", warnings["vllm"])
+        self.assertEqual("Go/Ollama", frameworks["ollama"])
+
+    def test_generate_bundled_repo_catalog_uses_seed_repo_even_without_topic_match(self) -> None:
+        client = FakeGitHubClient(
+            {
+                "machine-learning": FakeResponse(200, {"items": []}),
+                "deep-learning": FakeResponse(200, {"items": []}),
+                "llm": FakeResponse(200, {"items": []}),
+                "stable-diffusion": FakeResponse(200, {"items": []}),
+                "computer-vision": FakeResponse(200, {"items": []}),
+                "pytorch": FakeResponse(200, {"items": []}),
+                "huggingface": FakeResponse(200, {"items": []}),
+                "https://api.github.com/repos/example/seed-only": FakeResponse(
+                    200,
+                    {
+                        "name": "seed-only",
+                        "html_url": "https://github.com/example/seed-only",
+                        "stargazers_count": 42,
+                        "description": "Seed-first repo enriched from direct GitHub lookup.",
+                        "language": "Python",
+                        "topics": ["llm"],
+                        "updated_at": "2026-03-20T12:00:00Z",
+                    },
+                ),
+            }
+        )
+
+        with (
+            patch(
+                "state.repo_catalog.load_launch_catalog_seed",
+                return_value=(
+                    LaunchCatalogSeedEntry(
+                        name="seed-only",
+                        repo_url="https://github.com/example/seed-only",
+                    ),
+                ),
+            ),
+            patch(
+                "state.repo_catalog.load_launch_catalog_overrides",
+                return_value=LaunchCatalogOverrides(
+                    allowlist=frozenset({"seed-only"}),
+                    blocklist=frozenset(),
+                    overrides={
+                        "seed-only": LaunchCatalogMetadataOverride(category="LLM", framework="Python"),
+                    },
+                ),
+            ),
+        ):
+            records = generate_bundled_repo_catalog(client=client, per_topic_limit=10)
+
+        self.assertEqual(1, len(records))
+        self.assertEqual("seed-only", records[0].name)
+        self.assertEqual(42, records[0].stars)
+
+    def test_generate_bundled_repo_catalog_fetches_seed_metadata_from_github_api_repo_endpoint(self) -> None:
+        client = FakeGitHubClient(
+            {
+                "machine-learning": FakeResponse(200, {"items": []}),
+                "deep-learning": FakeResponse(200, {"items": []}),
+                "llm": FakeResponse(200, {"items": []}),
+                "stable-diffusion": FakeResponse(200, {"items": []}),
+                "computer-vision": FakeResponse(200, {"items": []}),
+                "pytorch": FakeResponse(200, {"items": []}),
+                "huggingface": FakeResponse(200, {"items": []}),
+                "https://api.github.com/repos/ggerganov/llama.cpp": FakeResponse(
+                    200,
+                    {
+                        "name": "llama.cpp",
+                        "html_url": "https://github.com/ggerganov/llama.cpp",
+                        "stargazers_count": 77,
+                        "description": "Local LLM inference runtime.",
+                        "language": "C++",
+                        "topics": ["llm"],
+                        "updated_at": "2026-03-20T12:00:00Z",
+                    },
+                ),
+            }
+        )
+
+        with (
+            patch(
+                "state.repo_catalog.load_launch_catalog_seed",
+                return_value=(
+                    LaunchCatalogSeedEntry(
+                        name="llama.cpp",
+                        repo_url="https://github.com/ggerganov/llama.cpp/",
+                    ),
+                ),
+            ),
+            patch(
+                "state.repo_catalog.load_launch_catalog_overrides",
+                return_value=LaunchCatalogOverrides(
+                    allowlist=frozenset({"llama.cpp"}),
+                    blocklist=frozenset(),
+                    overrides={
+                        "llama.cpp": LaunchCatalogMetadataOverride(
+                            category="LLM",
+                            framework="C++/Local Runtime",
+                        ),
+                    },
+                ),
+            ),
+        ):
+            records = generate_bundled_repo_catalog(client=client, per_topic_limit=10)
+
+        self.assertEqual(("llama.cpp",), tuple(record.name for record in records))
+        self.assertIn("https://api.github.com/repos/ggerganov/llama.cpp", client.called_urls)
+        self.assertNotIn("https://github.com/ggerganov/llama.cpp/", client.called_urls)
+
+    def test_generate_bundled_repo_catalog_uses_authenticated_headers_for_topic_and_seed_requests(self) -> None:
+        client = FakeGitHubClient(
+            {
+                "machine-learning": FakeResponse(
+                    200,
+                    {
+                        "items": [
+                            {
+                                "name": "topic-hit",
+                                "html_url": "https://github.com/example/topic-hit",
+                                "stargazers_count": 50,
+                                "description": "Inference demo",
+                                "language": "Python",
+                                "topics": ["machine-learning", "inference"],
+                                "updated_at": "2026-03-20T12:00:00Z",
+                            }
+                        ]
+                    },
+                ),
+                "deep-learning": FakeResponse(200, {"items": []}),
+                "llm": FakeResponse(200, {"items": []}),
+                "stable-diffusion": FakeResponse(200, {"items": []}),
+                "computer-vision": FakeResponse(200, {"items": []}),
+                "pytorch": FakeResponse(200, {"items": []}),
+                "huggingface": FakeResponse(200, {"items": []}),
+                "https://api.github.com/repos/example/seed-only": FakeResponse(
+                    200,
+                    {
+                        "name": "seed-only",
+                        "html_url": "https://github.com/example/seed-only",
+                        "stargazers_count": 42,
+                        "description": "Seed repo metadata",
+                        "language": "Python",
+                        "topics": ["llm"],
+                        "updated_at": "2026-03-20T12:00:00Z",
+                    },
+                ),
+            }
+        )
+
+        with (
+            patch.dict("os.environ", {"GITHUB_TOKEN": "test-token"}, clear=False),
+            patch(
+                "state.repo_catalog.load_launch_catalog_seed",
+                return_value=(
+                    LaunchCatalogSeedEntry(name="topic-hit", repo_url="https://github.com/example/topic-hit"),
+                    LaunchCatalogSeedEntry(name="seed-only", repo_url="https://github.com/example/seed-only"),
+                ),
+            ),
+            patch(
+                "state.repo_catalog.load_launch_catalog_overrides",
+                return_value=LaunchCatalogOverrides(
+                    allowlist=frozenset({"topic-hit", "seed-only"}),
+                    blocklist=frozenset(),
+                    overrides={},
+                ),
+            ),
+        ):
+            records = generate_bundled_repo_catalog(client=client, per_topic_limit=10)
+
+        self.assertEqual(("topic-hit", "seed-only"), tuple(record.name for record in records))
+        self.assertTrue(client.called_headers)
+        self.assertTrue(all(headers.get("Authorization") == "Bearer test-token" for headers in client.called_headers))
+        self.assertTrue(all(headers.get("Accept") == "application/vnd.github+json" for headers in client.called_headers))
+        self.assertTrue(all(headers.get("User-Agent") == "Duckln" for headers in client.called_headers))
+
+    def test_generate_bundled_repo_catalog_includes_github_403_body_in_error_message(self) -> None:
+        client = FakeGitHubClient(
+            {
+                "machine-learning": FakeResponse(200, {"items": []}),
+                "deep-learning": FakeResponse(200, {"items": []}),
+                "llm": FakeResponse(200, {"items": []}),
+                "stable-diffusion": FakeResponse(
+                    403,
+                    {"message": "API rate limit exceeded"},
+                    text='{"message":"API rate limit exceeded"}',
+                ),
+                "computer-vision": FakeResponse(200, {"items": []}),
+                "pytorch": FakeResponse(200, {"items": []}),
+                "huggingface": FakeResponse(200, {"items": []}),
+            }
+        )
+
+        with self.assertRaisesRegex(
+            Exception,
+            "GitHub topic fetch failed for 'stable-diffusion' \\(HTTP 403\\): \\{\"message\":\"API rate limit exceeded\"\\}",
+        ):
+            generate_bundled_repo_catalog(client=client, per_topic_limit=10)
+
+    def test_generate_bundled_repo_catalog_includes_github_403_json_body_when_text_is_empty(self) -> None:
+        client = FakeGitHubClient(
+            {
+                "machine-learning": FakeResponse(200, {"items": []}),
+                "deep-learning": FakeResponse(200, {"items": []}),
+                "llm": FakeResponse(200, {"items": []}),
+                "stable-diffusion": FakeResponse(
+                    403,
+                    {"message": "Resource protected by organization SSO"},
+                ),
+                "computer-vision": FakeResponse(200, {"items": []}),
+                "pytorch": FakeResponse(200, {"items": []}),
+                "huggingface": FakeResponse(200, {"items": []}),
+            }
+        )
+
+        with self.assertRaisesRegex(
+            Exception,
+            "GitHub topic fetch failed for 'stable-diffusion' \\(HTTP 403\\): \\{\"message\":\"Resource protected by organization SSO\"\\}",
+        ):
+            generate_bundled_repo_catalog(client=client, per_topic_limit=10)
+
+    def test_generate_bundled_repo_catalog_includes_github_403_body_for_seed_repo_fetch(self) -> None:
+        client = FakeGitHubClient(
+            {
+                "machine-learning": FakeResponse(200, {"items": []}),
+                "deep-learning": FakeResponse(200, {"items": []}),
+                "llm": FakeResponse(200, {"items": []}),
+                "stable-diffusion": FakeResponse(200, {"items": []}),
+                "computer-vision": FakeResponse(200, {"items": []}),
+                "pytorch": FakeResponse(200, {"items": []}),
+                "huggingface": FakeResponse(200, {"items": []}),
+                "https://api.github.com/repos/example/private-seed": FakeResponse(
+                    403,
+                    {"message": "Secondary rate limit"},
+                    text='{"message":"Secondary rate limit"}',
+                ),
+            }
+        )
+
+        with (
+            patch(
+                "state.repo_catalog.load_launch_catalog_seed",
+                return_value=(
+                    LaunchCatalogSeedEntry(name="private-seed", repo_url="https://github.com/example/private-seed"),
+                ),
+            ),
+            patch(
+                "state.repo_catalog.load_launch_catalog_overrides",
+                return_value=LaunchCatalogOverrides(
+                    allowlist=frozenset({"private-seed"}),
+                    blocklist=frozenset(),
+                    overrides={},
+                ),
+            ),
+        ):
+            with self.assertRaisesRegex(
+                Exception,
+                "GitHub repo fetch failed for 'https://github.com/example/private-seed' \\(HTTP 403\\): \\{\"message\":\"Secondary rate limit\"\\}",
+            ):
+                generate_bundled_repo_catalog(client=client, per_topic_limit=10)
 
 
 if __name__ == "__main__":

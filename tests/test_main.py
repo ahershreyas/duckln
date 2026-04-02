@@ -15,7 +15,7 @@ from duckln.main import get_slash_command_descriptors, handle_session_command, m
 from duckln.modes import ControlMode
 from duckln.repo_bringup import infer_repo_setup_plan, resolve_managed_project_dir
 from duckln.repos import CANCEL_REPO_SELECTION, format_repo_catalog_choice, open_repo_catalog
-from state.repo_catalog import RepoCatalogRecord, resolve_local_repo_catalog_cache_path
+from state.repo_catalog import RepoCatalogRecord, RepoCatalogRefreshResult, resolve_local_repo_catalog_cache_path
 from agent.probe import GpuProbeState, SystemProbe
 
 
@@ -45,7 +45,10 @@ class SlashCommandTest(unittest.TestCase):
     def test_command_palette_lists_available_commands(self) -> None:
         commands = get_slash_command_descriptors()
 
-        self.assertEqual(("/help", "/mode", "/provider", "/model", "/config", "/repos", "/memory clear", "/vm", "/healthcheck"), tuple(item.command for item in commands))
+        self.assertEqual(
+            ("/help", "/mode", "/provider", "/model", "/config", "/repos", "/repos refresh", "/memory clear", "/vm", "/healthcheck"),
+            tuple(item.command for item in commands),
+        )
         self.assertTrue(all("—" in item.choice_label for item in commands))
 
     def test_help_command_prints_supported_commands_from_metadata(self) -> None:
@@ -322,6 +325,67 @@ class SlashCommandTest(unittest.TestCase):
 
             self.assertEqual(current, updated)
             self.assertEqual(["No repository selected."], displayed)
+
+    def test_repos_refresh_command_reports_success_without_changing_config(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            paths = resolve_config_paths({"DUCKLN_CONFIG_DIR": temp_dir})
+            current = AppConfig(
+                provider=Provider.OPENAI,
+                model="gpt-4o-mini",
+                api_key="openai-key",
+                mode=ControlMode.HITL,
+            )
+            displayed: list[str] = []
+
+            with patch("duckln.main.refresh_local_repo_catalog") as refresh_catalog:
+                refresh_catalog.return_value = RepoCatalogRefreshResult(
+                    ok=True,
+                    message="Repo catalog refreshed: 14 repositories cached.",
+                    records=(),
+                )
+
+                updated = handle_session_command(
+                    "/repos refresh",
+                    current,
+                    paths,
+                    display=displayed.append,
+                )
+
+            self.assertEqual(current, updated)
+            refresh_catalog.assert_called_once_with(paths.config_dir)
+            self.assertEqual(["Repo catalog refreshed: 14 repositories cached."], displayed)
+
+    def test_repos_refresh_command_reports_retryable_error_without_changing_config(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            paths = resolve_config_paths({"DUCKLN_CONFIG_DIR": temp_dir})
+            current = AppConfig(
+                provider=Provider.OPENAI,
+                model="gpt-4o-mini",
+                api_key="openai-key",
+                mode=ControlMode.HITL,
+            )
+            displayed: list[str] = []
+
+            with patch("duckln.main.refresh_local_repo_catalog") as refresh_catalog:
+                refresh_catalog.return_value = RepoCatalogRefreshResult(
+                    ok=False,
+                    message="Repo catalog refresh failed: GitHub topic fetch failed for 'llm' (HTTP 503).",
+                    records=(),
+                )
+
+                updated = handle_session_command(
+                    "/repos refresh",
+                    current,
+                    paths,
+                    display=displayed.append,
+                )
+
+            self.assertEqual(current, updated)
+            refresh_catalog.assert_called_once_with(paths.config_dir)
+            self.assertEqual(
+                ["Retryable error: Repo catalog refresh failed: GitHub topic fetch failed for 'llm' (HTTP 503)."],
+                displayed,
+            )
 
     def test_vm_command_guides_install_without_changing_config(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

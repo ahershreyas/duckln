@@ -203,6 +203,15 @@ Excluded from v1:
 - Duckln MUST prefer repositories focused on inference, serving, demos, APIs, deployment, or end-user tooling.
 - The repo catalog generation flow MUST filter out repositories whose description or topics indicate training-heavy workflows, including keywords such as `training`, `fine-tuning`, `pretraining`, and `GRPO`.
 - The repo catalog generation flow SHOULD prefer repositories whose description or topics indicate inference or deployment workflows, including keywords such as `inference`, `serving`, `demo`, `api`, and `deployment`.
+- The bundled launch catalog MUST prioritize runnable local projects over frameworks, course material, documentation, resource lists, or textbooks.
+- The bundled launch catalog MUST exclude repositories whose primary language is HTML, JavaScript, TypeScript, Java, C, or Unknown unless explicitly allowlisted.
+- The bundled launch catalog MUST exclude repositories whose name, description, or topics contain non-runnable learning/resource signals such as `course`, `tutorial`, `awesome`, `guide`, `papers`, `resources`, `beginners`, `textbook`, or `from scratch`.
+- The bundled launch catalog MUST exclude foundational frameworks and libraries that are not practical end-user repo targets for Duckln setup at launch.
+- The bundled launch catalog MAY preserve a small explicit allowlist of practical runnable repos even if they would otherwise be filtered out.
+- Duckln MUST support a curated launch catalog source of truth separate from raw GitHub topic discovery.
+- Duckln MUST allow explicit launch allowlist, blocklist, and metadata overrides for bundled repo catalog generation.
+- The bundled launch catalog MUST prioritize curated high-value repos over raw topic-fetch results when determining the final default catalog.
+- Duckln MUST support metadata overrides for category, framework, and launch warnings when GitHub-derived metadata is insufficient or misleading.
 
 ## R12 — Agent Behavior and Memory Policy
 

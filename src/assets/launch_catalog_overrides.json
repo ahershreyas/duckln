@@ -1,0 +1,163 @@
+{
+  "allowlist": [
+    "whisper",
+    "whisperX",
+    "faster-whisper",
+    "llama.cpp",
+    "text-generation-webui",
+    "bark",
+    "kokoro",
+    "segment-anything",
+    "FastChat",
+    "AnythingLLM",
+    "private-gpt",
+    "gpt4all",
+    "stable-diffusion-webui",
+    "open-webui",
+    "ComfyUI",
+    "vllm",
+    "ultralytics",
+    "yolov5",
+    "LocalAI",
+    "diffusers",
+    "InvokeAI",
+    "Real-Time-Voice-Cloning",
+    "speechbrain",
+    "AutoGPT"
+  ],
+  "blocklist": [
+    "ollama",
+    "tensorflow",
+    "prompts.chat",
+    "dify",
+    "everything-claude-code",
+    "firecrawl",
+    "pytorch",
+    "LLMs-from-scratch",
+    "ML-For-Beginners",
+    "netdata",
+    "cs-video-courses",
+    "llm-course",
+    "d2l-zh",
+    "Prompt-Engineering-Guide",
+    "annotated_deep_learning_paper_implementations",
+    "AI-For-Beginners",
+    "applied-ml",
+    "ruflo",
+    "langchain4j",
+    "awesome-ai-painting",
+    "paper2gui",
+    "skorch",
+    "swarms",
+    "AI-Research-SKILLs",
+    "openvino",
+    "diffusionbee-stable-diffusion-ui",
+    "agents-course",
+    "datasets",
+    "keras"
+  ],
+  "overrides": {
+    "AutoGPT": {
+      "category": "LLM",
+      "framework": "Python",
+      "warning": "Multi-service setup"
+    },
+    "whisper": {
+      "category": "Audio",
+      "framework": "Python/PyTorch"
+    },
+    "whisperX": {
+      "category": "Audio",
+      "framework": "Python/PyTorch"
+    },
+    "faster-whisper": {
+      "category": "Audio",
+      "framework": "Python/CTranslate2"
+    },
+    "llama.cpp": {
+      "category": "LLM",
+      "framework": "C++/Local Runtime",
+      "warning": "Non-Python setup"
+    },
+    "text-generation-webui": {
+      "category": "LLM",
+      "framework": "Python"
+    },
+    "bark": {
+      "category": "Audio",
+      "framework": "Python/PyTorch"
+    },
+    "kokoro": {
+      "category": "Audio",
+      "framework": "Python"
+    },
+    "segment-anything": {
+      "category": "Computer Vision",
+      "framework": "Python/PyTorch"
+    },
+    "FastChat": {
+      "category": "LLM",
+      "framework": "Python"
+    },
+    "AnythingLLM": {
+      "category": "LLM",
+      "framework": "TypeScript/Local App",
+      "warning": "Non-Python setup"
+    },
+    "private-gpt": {
+      "category": "LLM",
+      "framework": "Python"
+    },
+    "gpt4all": {
+      "category": "LLM",
+      "framework": "C++/Local Runtime",
+      "warning": "Non-Python setup"
+    },
+    "stable-diffusion-webui": {
+      "category": "Stable Diffusion",
+      "framework": "Python/Stable Diffusion"
+    },
+    "open-webui": {
+      "category": "LLM",
+      "framework": "Python"
+    },
+    "ComfyUI": {
+      "category": "Stable Diffusion",
+      "framework": "Python/PyTorch"
+    },
+    "vllm": {
+      "category": "LLM",
+      "framework": "Python/vLLM",
+      "warning": "GPU recommended"
+    },
+    "ultralytics": {
+      "category": "Computer Vision",
+      "framework": "Python/PyTorch"
+    },
+    "yolov5": {
+      "category": "Computer Vision",
+      "framework": "Python/PyTorch"
+    },
+    "LocalAI": {
+      "category": "LLM",
+      "framework": "Go/Local Runtime",
+      "warning": "Non-Python setup"
+    },
+    "diffusers": {
+      "category": "Stable Diffusion",
+      "framework": "Python/Diffusers"
+    },
+    "InvokeAI": {
+      "category": "Stable Diffusion",
+      "framework": "Python/Stable Diffusion"
+    },
+    "Real-Time-Voice-Cloning": {
+      "category": "Audio",
+      "framework": "Python/PyTorch"
+    },
+    "speechbrain": {
+      "category": "Audio",
+      "framework": "Python/PyTorch"
+    }
+  }
+}

@@ -149,7 +149,10 @@ Duckln v1 should be implemented as a terminal-native Python CLI with modular bou
 31. **Implement memory materialization and sync layer**
     Covers: R12
     Why: allows Duckln to expose agent-readable files from SQLite-backed memory safely and consistently
-
+    
+32. **Implement curated launch-catalog overrides for bundled repo generation**
+    Covers: R11
+    Why: launch repo quality requires product-level curation beyond raw GitHub topic filtering
 
 ## Technical Decisions
 

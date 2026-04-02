@@ -27,6 +27,7 @@ from duckln.ui import render_banner
 from duckln.vm import configure_existing_multipass_vm, create_multipass_vm
 from agent.probe import probe_system
 from state.access import clear_memory_scope, record_system_probe
+from state.repo_catalog import refresh_local_repo_catalog
 
 
 @dataclass(frozen=True)
@@ -51,6 +52,7 @@ def get_slash_command_descriptors() -> tuple[SlashCommandDescriptor, ...]:
         SlashCommandDescriptor("/model", "Pick a different model for the current provider."),
         SlashCommandDescriptor("/config", "Open the configuration menu."),
         SlashCommandDescriptor("/repos", "Browse the cached repo catalog and select a repository."),
+        SlashCommandDescriptor("/repos refresh", "Refresh the cached repo catalog from GitHub."),
         SlashCommandDescriptor("/memory clear", "Clear Duckln memory with confirmation."),
         SlashCommandDescriptor("/vm", "Create an Ubuntu VM with Multipass."),
         SlashCommandDescriptor("/healthcheck", "Validate Python, dependencies, and provider connectivity."),
@@ -114,6 +116,17 @@ def handle_session_command(
             display=display,
             client=client,
         )
+    if command == "/repos refresh":
+        try:
+            result = refresh_local_repo_catalog(paths.config_dir)
+        except Exception as exc:
+            display(f"Retryable error: {exc}")
+            return current
+        if result.ok:
+            display(result.message)
+        else:
+            display(f"Retryable error: {result.message}")
+        return current
     if command == "/repos":
         try:
             selected_repo = open_repo_catalog(paths, select=select)
