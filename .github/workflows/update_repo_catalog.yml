@@ -46,10 +46,9 @@ jobs:
           git commit -m "chore: update bundled repo catalog"
           echo "REPO_CATALOG_CHANGED=true" >> "$GITHUB_ENV"
 
-            - name: Push changes if needed
+      - name: Push changes if needed
         run: |
           [ "${REPO_CATALOG_CHANGED}" = "true" ] || exit 0
-
           for attempt in 1 2 3; do
             git fetch origin main
             git rebase origin/main
@@ -59,6 +58,5 @@ jobs:
             echo "Push attempt $attempt failed; retrying..."
             sleep 3
           done
-
           echo "Failed to push repo catalog update after retries."
           exit 1
