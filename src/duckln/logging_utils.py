@@ -10,6 +10,9 @@ from typing import Any
 
 
 LOGGER_NAME = "duckln"
+_LOGGER = logging.getLogger(LOGGER_NAME)
+_LOGGER.addHandler(logging.NullHandler())
+_LOGGER.propagate = False
 
 
 @dataclass(frozen=True)
@@ -39,7 +42,7 @@ def emit_log(
         message=_redact_text(message),
         metadata=_redact_metadata(metadata or {}),
     )
-    logging.getLogger(LOGGER_NAME).log(_coerce_log_level(payload.level), json.dumps(payload.__dict__, sort_keys=True))
+    _LOGGER.log(_coerce_log_level(payload.level), json.dumps(payload.__dict__, sort_keys=True))
     return payload
 
 

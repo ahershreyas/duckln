@@ -154,6 +154,50 @@ Duckln v1 should be implemented as a terminal-native Python CLI with modular bou
     Covers: R11
     Why: launch repo quality requires product-level curation beyond raw GitHub topic filtering
 
+33. **Implement supervisor-agent routing for repo bring-up**
+    Covers: R11
+    Why: repo setup requires classification and specialist routing rather than one generic setup path
+
+34. **Implement repo-family classification before setup**
+    Covers: R11
+    Why: Python, C++/native, Node, audio, and diffusion repos need different bring-up strategies
+
+35. **Implement specialist bring-up agents and playbooks**
+    Covers: R11
+    Why: Duckln needs domain-specific setup logic for different repo families to become a trustworthy agent
+
+36. **Implement Ollama as a local provider option**
+    Covers: R11
+    Why: users need a local-model path without cloud API keys for privacy and offline workflows
+
+37. **Implement detailed agent guardrails and playbook-backed decision rules**
+    Covers: R11,R12
+    Why: stronger agent behavior requires explicit boundaries, routing, and verification logic
+
+38. **Preserve curated launch catalog expansion including Coqui TTS**
+    Covers: R11
+    Why: launch catalog quality must reflect practical local projects, not only topic-search results
+
+39. **Implement Debug / Recovery specialist agent for failed bring-up attempts**
+    Covers: R11,R12
+    Why: first-pass setup specialists are not enough for real-world repo failures and mixed-stack recovery
+
+40. **Implement failure classification and bounded recovery routing**
+    Covers: R11,R12
+    Why: setup failures must be analyzed and resolved through retry, reroute, prerequisite requests, or explicit unsupported-case handling
+
+41. **Implement supervisor confidence, escalation, and post-failure memory reflection**
+    Covers: R11,R12
+    Why: Duckln must behave like a real decision-making agent, not just a fixed setup runner
+
+42. **Implement first-run trust and runtime UX improvements**
+    Covers: R12
+    Why: users need clear safety, identity, state visibility, and consistent interaction behavior to trust Duckln
+
+43. **Implement bounded uninstall flow with OS-aware removal**
+    Covers: R12
+    Why: users must be able to remove Duckln and related data safely and predictably across platforms
+
 ## Technical Decisions
 
 - Language: Python 3.11+

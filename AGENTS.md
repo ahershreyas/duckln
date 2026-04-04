@@ -118,6 +118,164 @@ Prefer:
 
 ---
 
+## Agent Architecture
+
+Duckln should operate as a supervised multi-agent system rather than one generic repo-setup agent.
+
+### Supervisor Agent
+The supervisor agent should:
+1. inspect repo files and environment signals
+2. classify the repo family
+3. choose the correct specialist agent
+4. review the proposed setup path
+5. enforce mode and safety rules
+6. verify the result
+7. retry or reroute only when necessary
+
+The supervisor agent must not blindly execute setup logic without first selecting a repo family and specialist path.
+
+### Specialist Agents
+Duckln should support specialist agents for:
+- Python repos
+- C++ / native runtime repos
+- Node / TypeScript repos
+- audio repos
+- diffusion-heavy repos
+- VM / environment flows
+- provider/model routing
+
+Each specialist agent must:
+- stay inside its domain
+- use a bounded playbook
+- propose the smallest practical setup path
+- return verification steps
+- escalate unsupported cases to the supervisor agent
+
+## Playbook Enforcement
+
+Duckln should only describe behavior as playbook-backed when runtime code actually consumes those playbooks or enforces equivalent structured rules.
+
+If playbooks exist only as reference documents and are not connected to runtime behavior, Duckln should not claim that specialist behavior is playbook-backed.
+
+### Repo-family classification
+Before setup, Duckln should classify the selected repo into a family such as:
+- python_app
+- cpp_native_runtime
+- node_multi_service
+- audio_pipeline
+- diffusion_heavy
+- mixed_or_unknown
+
+Duckln should not assume Python setup by default when repo signals indicate a different family.
+
+### Guardrails
+The supervisor and specialist agents must:
+- avoid raw log dumping
+- avoid bluffing when uncertain
+- prefer minimal safe actions
+- verify before claiming success
+- write only concise, high-signal memory
+- stop or escalate when the setup path falls outside the specialist domain
+
+### Debug / Recovery Agent
+
+Duckln should include a dedicated Debug / Recovery specialist agent for setup failures.
+
+The Debug / Recovery agent should:
+1. inspect the failed specialist path
+2. review concise error output, verification failure, repo family, attempted steps, and environment signals
+3. classify the likely failure type
+4. return a bounded recovery decision
+
+Supported recovery decisions:
+- retry_same_specialist
+- reroute_to_other_specialist
+- request_missing_prerequisite
+- unsupported_case
+
+The Debug / Recovery agent should specialize in:
+- dependency installation failures
+- command-not-found failures
+- missing compiler/build tool failures
+- Python pip/venv mismatches
+- Node/npm/pnpm/yarn mismatches
+- service-not-running failures
+- port conflicts
+- missing model/runtime cases
+- GPU/CUDA mismatch cases
+- unsupported platform cases
+- mixed-stack repo bring-up conflicts
+
+The Debug / Recovery agent must not:
+- loop indefinitely
+- bluff when uncertain
+- dump raw logs into memory
+- execute outside supervisor-approved safety and mode rules
+
+The supervisor agent should escalate to the Debug / Recovery agent when:
+- a specialist path fails verification
+- repo-family classification confidence is low
+- the repo appears mixed or ambiguous
+- the first recovery attempt fails
+
+All recovery behavior must remain bounded, explicit, and verifiable.
+
+The Debug / Recovery agent must not be advisory only.
+
+After failed specialist verification, the supervisor should escalate to the Debug / Recovery agent, which must return exactly one bounded next action:
+- retry_same_specialist
+- reroute_to_other_specialist
+- request_missing_prerequisite
+- unsupported_case
+
+The Debug / Recovery loop must remain bounded and must not retry indefinitely.
+Recovery learnings should be written only as concise high-signal memory through the managed memory system.
+
+## Execution Target Context
+
+Duckln should preserve execution-target context for repo bring-up.
+
+- Repo bring-up should know whether the intended execution target is local or VM.
+- If the user has selected or created a VM, later repo bring-up should use that context when making setup decisions.
+- Duckln should persist execution-target context when it materially affects future setup behavior.
+
+---
+
+### Ollama
+
+Duckln should treat Ollama as a first-class local provider with a dedicated terminal UX, not as a cloud API-key provider.
+
+When the user selects Ollama, Duckln should:
+
+1. detect whether Ollama is reachable at the configured base URL, defaulting to `http://localhost:11434/api/tags`
+2. if Ollama is reachable:
+   - show a clear success message
+   - fetch and display locally available models
+   - allow the user to select an existing model or pull a new one
+3. if Ollama is installed but not running:
+   - explain that Ollama was found but is not currently running
+   - offer to start it automatically
+   - wait for the runtime to become reachable before continuing
+4. if Ollama is not installed:
+   - show OS-specific install instructions
+   - optionally offer automatic installation according to the current mode and safety rules
+5. if the default URL is not reachable:
+   - allow the user to enter a custom Ollama URL
+   - retry detection there
+   - persist the custom URL for future use
+6. never ask for or store an API key for Ollama
+7. store Ollama config with `api_key: null`
+8. reuse the same model selection and model-pull flow when the user runs `/model`
+9. at session start, if Ollama is the configured provider:
+   - check runtime availability
+   - if Ollama is not running, clearly guide the user to fix it instead of failing silently
+10. if repeated Ollama setup attempts fail:
+   - offer a clean fallback back to provider selection
+
+All Ollama interactions must be explicit, readable, and never fail silently.
+
+---
+
 ## Repository Catalog Rules
 
 Duckln must use a cached local `repos.json` catalog by default.
@@ -325,6 +483,26 @@ When showing commands:
 - Duckln should guide the user after onboarding by suggesting `/help` for command discovery.
 - Repo and VM selection flows must always include a cancel option and return safely to the terminal without changing state.
 
+## Session UX
+
+At session start, Duckln should show a compact header so the user can immediately see:
+- provider
+- model
+- mode
+- user name
+- memory state
+
+The header should remain compact and readable and should include short hints for `/provider`, `/model`, and `/mode`.
+
+## Cancel vs Exit
+
+Duckln must clearly distinguish between `cancel` and `exit`.
+
+- `cancel` returns to the previous menu or prompt without changing state
+- `exit` or `/exit` ends the entire Duckln session
+- `Ctrl+C` should behave like cancel inside menus and like exit at the top-level prompt
+- Duckln must never confuse cancel with exit or drop the user into an inconsistent state
+
 ---
 
 ## Explanation Style
@@ -399,3 +577,41 @@ Duckln fails when it:
 - stores too much noise
 - makes unsafe changes
 - claims success without verification
+
+## Work-Status Updates
+
+For non-trivial actions, Duckln should show short work-status updates so the user can follow what it is doing.
+
+Examples:
+- Reading your README to understand the setup path...
+- Checking which Python is active...
+- Trying the lighter fix first...
+
+These updates must be brief, useful, and must not expose full internal reasoning.
+
+## First-Run Trust Flow
+
+On first run, Duckln should:
+1. show a lightweight safety and permissions screen
+2. require explicit user acceptance
+3. ask what to call the user
+4. persist the user name and onboarding completion state
+
+## Configuration and Runtime State
+
+Duckln should keep configuration, user preferences, and runtime session state consistent.
+
+- Duckln must not drift between config.json, SQLite-backed state, and the current in-session runtime state.
+- When configuration changes, the current session should immediately reflect the new valid state.
+- When a factory reset occurs, Duckln should reset Duckln-managed config, preferences, memory, and current runtime state consistently.
+- Duckln should preserve the last good state when a configuration flow is cancelled or interrupted.
+
+## Secret Handling
+
+Duckln must treat API keys and secrets as sensitive at all times.
+
+- Duckln must never echo raw API keys back to the terminal after entry.
+- Duckln must handle interrupted secret input safely.
+- Duckln must never write raw secrets into logs, memory files, SQLite, or user-visible error output.
+- Provider and runtime diagnostics must be redaction-safe.
+

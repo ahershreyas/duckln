@@ -212,6 +212,54 @@ Excluded from v1:
 - Duckln MUST allow explicit launch allowlist, blocklist, and metadata overrides for bundled repo catalog generation.
 - The bundled launch catalog MUST prioritize curated high-value repos over raw topic-fetch results when determining the final default catalog.
 - Duckln MUST support metadata overrides for category, framework, and launch warnings when GitHub-derived metadata is insufficient or misleading.
+- Duckln MUST support repo-family classification before setup execution.
+- Duckln MUST use a supervisor agent to inspect the repo, classify the repo family, select the correct specialist agent, and verify the result.
+- Duckln MUST support specialist setup agents for at least Python, C++/native runtime, Node/TypeScript, audio pipelines, diffusion-heavy repos, VM/environment setup, and provider/model routing.
+- Specialist agents MUST operate with bounded domain-specific playbooks and must not execute outside their domain without supervisor escalation.
+- Duckln MUST support detailed agent playbooks and guardrails so setup behavior is explicit, reviewable, and consistent.
+- Duckln MUST support Ollama as a local provider option for users who want local model execution without cloud API keys.
+- Duckln MUST distinguish between Python-primary repos, C++/native runtime repos, Node/TypeScript repos, multi-service repos, audio repos, and diffusion-heavy repos before choosing the bring-up path.
+- Duckln MUST preserve launch-catalog curation and allow manually curated launch repos such as Coqui TTS to remain in the bundled catalog even if they are not surfaced by topic ranking alone.
+- Duckln MUST treat Ollama as a first-class local provider with a provider-specific terminal flow separate from cloud API-key providers.
+- WHEN the user selects Ollama THEN Duckln MUST first detect whether Ollama is reachable at `http://localhost:11434`.
+- WHEN Ollama is reachable THEN Duckln MUST fetch and display locally available models and allow the user to select one or pull a new model.
+- WHEN Ollama is not reachable THEN Duckln MUST show clear install/start instructions and allow the user to retry detection or choose a different provider.
+- Duckln MUST NOT ask for or store an API key for Ollama.
+- Duckln MUST store Ollama configuration with `api_key: null`.
+- Duckln MUST support pulling recommended Ollama models based on detected system RAM.
+- Duckln MUST support the same Ollama model selection/pull flow from `/model` after setup.
+- WHEN Ollama is the configured provider THEN Duckln MUST check runtime availability at session start and guide the user to run `ollama serve` if Ollama is not running.
+- All provider/model menus MUST include a Cancel / Exit / Back option and preserve current state when cancelled.
+- Duckln MUST treat Ollama as a first-class local provider with a provider-specific terminal UX separate from cloud API-key providers.
+- WHEN the user selects Ollama THEN Duckln MUST first detect whether Ollama is reachable at the configured base URL, defaulting to `http://localhost:11434/api/tags`.
+- WHEN Ollama is reachable THEN Duckln MUST show a clear success message, fetch locally available models, and allow the user to select an existing model or pull a new one.
+- WHEN Ollama is installed but not running THEN Duckln SHOULD offer to start Ollama automatically and continue once the runtime is reachable.
+- WHEN Ollama is not installed THEN Duckln MUST show OS-specific install guidance and MAY offer automatic installation according to the active mode and safety rules.
+- Duckln MUST NOT ask for or store an API key for Ollama.
+- Duckln MUST store Ollama configuration with `api_key: null` and a persisted local or custom `base_url`.
+- WHEN the default Ollama URL is not reachable THEN Duckln SHOULD allow the user to enter a custom Ollama URL and retry detection there.
+- WHEN Ollama detection fails repeatedly THEN Duckln MUST offer a clean fallback to choose a different provider instead of dead-ending the user.
+- Duckln MUST support reusing the Ollama model selection and model-pull flow from `/model` when Ollama is the current provider.
+- WHEN Ollama is the configured provider at session start THEN Duckln MUST check runtime availability and guide the user clearly if Ollama is not running.
+- All provider and model flows MUST include Cancel / Exit / Back options and preserve current state when cancelled.
+- Duckln MUST support a dedicated Debug / Recovery specialist agent for failed setup attempts.
+- WHEN a specialist setup path fails verification THEN the supervisor agent MUST escalate the failure to the Debug / Recovery agent before declaring failure to the user, unless the case is clearly unsupported or blocked by safety rules.
+- The Debug / Recovery agent MUST classify failure types such as dependency-install failure, command-not-found, missing compiler/tooling, pip or venv mismatch, Node/npm mismatch, service-not-running, port conflict, model/runtime missing, GPU/CUDA mismatch, unsupported platform, and mixed-stack setup conflicts.
+- The Debug / Recovery agent MUST return a bounded recovery decision: retry with revised plan, reroute to a different specialist, request a missing prerequisite from the user, or mark the case unsupported.
+- Duckln MUST NOT bluff or loop indefinitely after setup failure; retries and reroutes MUST be bounded and explicit.
+- The supervisor agent MUST use confidence-aware routing and MUST prefer escalation to the Debug / Recovery agent when the first specialist path fails or when repo classification confidence is low.
+- Duckln MUST support explicit debug/recovery playbooks and guardrails so troubleshooting remains predictable, reviewable, and safe.
+- Memory written from failed setup attempts MUST be concise, generalized, and high-signal; Duckln MUST NOT store raw logs or case-by-case clutter as memory.
+- [ ] Unify persisted config, preferences, and in-session runtime state under a single authoritative contract (Plan: 43; Req: R12)
+- [ ] Fix `/memory clear` factory reset so it resets SQLite state, filesystem materialization, config/preferences state, and current in-session state consistently (Plan: 43; Req: R12)
+- [ ] Remove API-key echo from terminal flows and preserve last good state on cancelled/interrupted secret entry (Plan: 44; Req: R12)
+- [ ] Add safe KeyboardInterrupt handling to secret-input flows (Plan: 44; Req: R12)
+- [ ] Implement redaction-safe provider/runtime logging so raw secrets never reach terminal, logs, memory, or SQLite (Plan: 44; Req: R12)
+- [ ] Pass execution-target context into `/repos` bring-up and persist selected execution target for later setup decisions (Plan: 45; Req: R11,R12)
+- [ ] Implement bounded Debug / Recovery execution loop after failed specialist verification (Plan: 46; Req: R11,R12)
+- [ ] Support exactly one bounded Debug / Recovery decision: retry, reroute, request prerequisite, or mark unsupported (Plan: 46; Req: R11,R12)
+- [ ] Write concise recovery learnings through the SQLite-backed memory API as session/knowledge notes (Plan: 46; Req: R11,R12)
+- [ ] Enforce playbook-backed behavior in runtime code or remove unsupported playbook-backed claims from implementation/docs (Plan: 46; Req: R11,R12)
 
 ## R12 — Agent Behavior and Memory Policy
 
@@ -239,8 +287,17 @@ Example good message: Duckln is working hard for you ❤️.
 - Duckln MUST expose agent memory to the runtime agent in a filesystem-shaped structure, materialized from SQLite as needed.
 - Duckln MUST support synchronization between SQLite-backed memory records and the agent-facing filesystem view without storing raw logs or transcripts.
 - Duckln MUST preserve small, high-signal memory files and avoid uncontrolled memory expansion.
+- On first run, Duckln MUST show a lightweight safety and permissions screen and require explicit user acceptance before continuing.
+- On first run, Duckln MUST ask what to call the user and persist that preference for future sessions.
+- Duckln MUST store user preferences including name, safety acceptance, onboarding completion, and preferred mode.
+- At session start, Duckln MUST display a compact header showing active provider, model, mode, user name, and memory state, with short hints for `/provider`, `/model`, and `/mode`.
+- Duckln MUST standardize `cancel` vs `exit` behavior across all interactive flows. `cancel` returns to the previous menu or prompt without changing state; `exit` or `/exit` ends the session.
+- Duckln MUST provide brief work-status updates for non-trivial actions without exposing full internal reasoning.
+- Duckln MUST provide a bounded uninstall flow that supports removing: (1) application only, (2) application plus memory/session data, or (3) everything including config and stored credentials.
+- Duckln uninstall behavior MUST be OS-aware and must use the correct uninstall path for the detected installation method and operating system.
+- Duckln SHOULD keep versioned product UX specifications for terminal UI, onboarding, and uninstall behavior in repository spec files.
 
 ### R13 — Command Discovery and Safe Interaction
-- [ ] Implement `/help` command to display available slash commands with one-line descriptions (Plan: 19; Req: R11)
-- [ ] Add post-onboarding hint directing users to `/help` for command discovery (Plan: 19; Req: R11)
-- [ ] Add cancel/return option to `/repos` selector and preserve session state on cancel (Plan: 17; Req: R11)
+- Implement `/help` command to display available slash commands with one-line descriptions (Plan: 19; Req: R11)
+- Add post-onboarding hint directing users to `/help` for command discovery (Plan: 19; Req: R11)
+- Add cancel/return option to `/repos` selector and preserve session state on cancel (Plan: 17; Req: R11)

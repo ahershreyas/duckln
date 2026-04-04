@@ -4,12 +4,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+import shutil
 from typing import Any, Protocol
 
 from duckln.logging_utils import log_provider_failure
 
 
 DEFAULT_TIMEOUT_SECONDS = 10.0
+OLLAMA_TIMEOUT_SECONDS = 2.0
+OLLAMA_DEFAULT_BASE_URL = "http://localhost:11434"
 ANTHROPIC_VERSION = "2023-06-01"
 
 
@@ -19,6 +22,7 @@ class Provider(str, Enum):
     OPENROUTER = "openrouter"
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
+    OLLAMA = "ollama"
 
     @property
     def label(self) -> str:
@@ -26,6 +30,7 @@ class Provider(str, Enum):
             Provider.OPENROUTER: "OpenRouter",
             Provider.OPENAI: "OpenAI",
             Provider.ANTHROPIC: "Anthropic",
+            Provider.OLLAMA: "Ollama",
         }
         return labels[self]
 
@@ -35,8 +40,13 @@ class Provider(str, Enum):
             Provider.OPENROUTER: "OpenRouter API key",
             Provider.OPENAI: "OpenAI API key",
             Provider.ANTHROPIC: "Anthropic API key",
+            Provider.OLLAMA: "Ollama local runtime",
         }
         return names[self]
+
+    @property
+    def requires_api_key(self) -> bool:
+        return self is not Provider.OLLAMA
 
 
 @dataclass(frozen=True)
@@ -87,8 +97,9 @@ class ProviderAdapter:
 
     provider: Provider
     base_url: str
+    timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
 
-    def build_headers(self, api_key: str) -> dict[str, str]:
+    def build_headers(self, api_key: str | None) -> dict[str, str]:
         raise NotImplementedError
 
     def parse_models(self, payload: dict[str, Any]) -> tuple[ProviderModel, ...]:
@@ -99,7 +110,7 @@ class ProviderAdapter:
 
     def list_models(
         self,
-        api_key: str,
+        api_key: str | None,
         *,
         client: HttpClient | None = None,
         model_id: str | None = None,
@@ -109,12 +120,13 @@ class ProviderAdapter:
                 self.models_url(),
                 headers=self.build_headers(api_key),
                 client=client,
+                timeout_seconds=self.timeout_seconds,
             )
         except Exception as exc:
             public_message = f"Failed to connect to {self.provider.label}. Please retry."
             log_message = (
                 f"{public_message} "
-                f"url={self.models_url()} timeout={DEFAULT_TIMEOUT_SECONDS}s "
+                f"url={self.models_url()} timeout={self.timeout_seconds}s "
                 f"error={type(exc).__name__}: {exc}"
             )
             log_provider_failure(
@@ -168,11 +180,11 @@ class ProviderAdapter:
 
     def validate_api_key(
         self,
-        api_key: str,
+        api_key: str | None,
         *,
         client: HttpClient | None = None,
     ) -> ProviderValidationResult:
-        if not api_key.strip():
+        if self.provider.requires_api_key and not (api_key or "").strip():
             return ProviderValidationResult(ok=False, message=f"{self.provider.api_key_name} is required.")
 
         try:
@@ -190,7 +202,7 @@ class ProviderAdapter:
 
     def validate_model(
         self,
-        api_key: str,
+        api_key: str | None,
         model_id: str,
         *,
         client: HttpClient | None = None,
@@ -220,6 +232,15 @@ class ProviderAdapter:
             models=available_models,
         )
 
+    def pull_model(
+        self,
+        api_key: str | None,
+        model_id: str,
+        *,
+        client: HttpClient | None = None,
+    ) -> ProviderValidationResult:
+        return ProviderValidationResult(ok=False, message=f"Pulling a new model is not supported for {self.provider.label}.")
+
 
 class OpenRouterAdapter(ProviderAdapter):
     """Provider adapter for OpenRouter."""
@@ -227,9 +248,9 @@ class OpenRouterAdapter(ProviderAdapter):
     provider = Provider.OPENROUTER
     base_url = "https://openrouter.ai/api/v1"
 
-    def build_headers(self, api_key: str) -> dict[str, str]:
+    def build_headers(self, api_key: str | None) -> dict[str, str]:
         return {
-            "Authorization": f"Bearer {api_key}",
+            "Authorization": f"Bearer {api_key or ''}",
             "Accept": "application/json",
         }
 
@@ -250,9 +271,9 @@ class OpenAIAdapter(ProviderAdapter):
     provider = Provider.OPENAI
     base_url = "https://api.openai.com/v1"
 
-    def build_headers(self, api_key: str) -> dict[str, str]:
+    def build_headers(self, api_key: str | None) -> dict[str, str]:
         return {
-            "Authorization": f"Bearer {api_key}",
+            "Authorization": f"Bearer {api_key or ''}",
             "Accept": "application/json",
         }
 
@@ -270,9 +291,9 @@ class AnthropicAdapter(ProviderAdapter):
     provider = Provider.ANTHROPIC
     base_url = "https://api.anthropic.com/v1"
 
-    def build_headers(self, api_key: str) -> dict[str, str]:
+    def build_headers(self, api_key: str | None) -> dict[str, str]:
         return {
-            "x-api-key": api_key,
+            "x-api-key": api_key or "",
             "anthropic-version": ANTHROPIC_VERSION,
             "Accept": "application/json",
         }
@@ -288,15 +309,179 @@ class AnthropicAdapter(ProviderAdapter):
         )
 
 
+class OllamaAdapter(ProviderAdapter):
+    """Provider adapter for local Ollama."""
+
+    provider = Provider.OLLAMA
+    timeout_seconds = OLLAMA_TIMEOUT_SECONDS
+
+    def __init__(self, base_url: str | None = None) -> None:
+        self.base_url = normalize_ollama_base_url(base_url)
+
+    def build_headers(self, api_key: str | None) -> dict[str, str]:
+        return {
+            "Accept": "application/json",
+        }
+
+    def models_url(self) -> str:
+        return f"{self.base_url}/api/tags"
+
+    def list_models(
+        self,
+        api_key: str | None,
+        *,
+        client: HttpClient | None = None,
+        model_id: str | None = None,
+    ) -> tuple[ProviderModel, ...]:
+        try:
+            response = _perform_get(
+                self.models_url(),
+                headers=self.build_headers(None),
+                client=client,
+                timeout_seconds=self.timeout_seconds,
+            )
+        except Exception as exc:
+            public_message = f"Failed to connect to {self.provider.label}. Please retry."
+            log_message = (
+                f"{public_message} "
+                    f"url={self.models_url()} timeout={self.timeout_seconds}s "
+                f"error={type(exc).__name__}: {exc}"
+            )
+            log_provider_failure(
+                provider=self.provider.value,
+                model=model_id,
+                status_code=None,
+                message=log_message,
+            )
+            raise ProviderRequestError(public_message, log_message) from exc
+
+        if response.status_code >= 400:
+            message = f"Ollama returned HTTP {response.status_code}. Please retry."
+            log_provider_failure(
+                provider=self.provider.value,
+                model=model_id,
+                status_code=response.status_code,
+                message=message,
+            )
+            raise ProviderRequestError(message, message, status_code=response.status_code)
+
+        return self.parse_models(response.json())
+
+    def parse_models(self, payload: dict[str, Any]) -> tuple[ProviderModel, ...]:
+        return tuple(
+            ProviderModel(
+                id=item["name"],
+                display_name=item["name"],
+            )
+            for item in payload.get("models", [])
+            if item.get("name")
+        )
+
+    def validate_api_key(
+        self,
+        api_key: str | None,
+        *,
+        client: HttpClient | None = None,
+    ) -> ProviderValidationResult:
+        try:
+            models = self.list_models(None, client=client)
+        except ProviderRequestError:
+            if shutil.which("ollama") is not None:
+                return ProviderValidationResult(
+                    ok=False,
+                    message=(
+                        f"Ollama is installed but not running at {self.models_url()}. "
+                        "Start it with `ollama serve`, then retry detection."
+                    ),
+                )
+            return ProviderValidationResult(
+                ok=False,
+                message=(
+                    f"Ollama is not installed or not reachable at {self.models_url()}. "
+                    f"{_ollama_install_guidance()}"
+                ),
+            )
+        return ProviderValidationResult(
+            ok=True,
+            message=f"Ollama is reachable at {self.models_url()}.",
+            models=models,
+        )
+
+    def pull_model(
+        self,
+        api_key: str | None,
+        model_id: str,
+        *,
+        client: HttpClient | None = None,
+    ) -> ProviderValidationResult:
+        if not model_id.strip():
+            return ProviderValidationResult(ok=False, message="An Ollama model name is required.")
+
+        try:
+            response = _perform_post(
+                f"{self.base_url}/api/pull",
+                headers=self.build_headers(None),
+                json_payload={"name": model_id, "stream": False},
+                client=client,
+                timeout_seconds=self.timeout_seconds,
+            )
+        except Exception as exc:
+            return ProviderValidationResult(
+                ok=False,
+                message=f"Failed to request ollama pull {model_id}. Please retry. ({type(exc).__name__}: {exc})",
+            )
+
+        if response.status_code >= 400:
+            return ProviderValidationResult(
+                ok=False,
+                message=f"Ollama pull failed for {model_id} (HTTP {response.status_code}).",
+            )
+
+        refreshed = self.validate_api_key(None, client=client)
+        if refreshed.ok and model_id not in {model.id for model in refreshed.models}:
+            return ProviderValidationResult(
+                ok=False,
+                message=f"Ollama accepted pull for {model_id}, but the model is not listed locally yet. Retry detection.",
+                models=refreshed.models,
+            )
+        return ProviderValidationResult(
+            ok=refreshed.ok,
+            message=f"Ollama model {model_id} is ready locally." if refreshed.ok else refreshed.message,
+            models=refreshed.models,
+        )
+
+
 def get_provider_adapter(provider: Provider) -> ProviderAdapter:
     """Return the adapter for a configured provider."""
+
+    return get_provider_adapter_for_base_url(provider, base_url=None)
+
+
+def get_provider_adapter_for_base_url(
+    provider: Provider,
+    *,
+    base_url: str | None,
+) -> ProviderAdapter:
+    """Return a provider adapter, preserving custom Ollama base URLs."""
 
     adapters: dict[Provider, ProviderAdapter] = {
         Provider.OPENROUTER: OpenRouterAdapter(),
         Provider.OPENAI: OpenAIAdapter(),
         Provider.ANTHROPIC: AnthropicAdapter(),
+        Provider.OLLAMA: OllamaAdapter(base_url=base_url),
     }
     return adapters[provider]
+
+
+def normalize_ollama_base_url(base_url: str | None) -> str:
+    """Normalize a user-entered Ollama URL to a stable host root."""
+
+    normalized = (base_url or OLLAMA_DEFAULT_BASE_URL).strip().rstrip("/")
+    if normalized.endswith("/api/tags"):
+        normalized = normalized[: -len("/api/tags")]
+    elif normalized.endswith("/api"):
+        normalized = normalized[: -len("/api")]
+    return normalized or OLLAMA_DEFAULT_BASE_URL
 
 
 def _perform_get(
@@ -304,9 +489,10 @@ def _perform_get(
     *,
     headers: dict[str, str],
     client: HttpClient | None,
+    timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
 ) -> HttpResponse:
     if client is not None:
-        return client.get(url, headers=headers, timeout=DEFAULT_TIMEOUT_SECONDS)
+        return client.get(url, headers=headers, timeout=timeout_seconds)
 
     try:
         import httpx
@@ -314,4 +500,37 @@ def _perform_get(
         raise RuntimeError("httpx is required for live provider validation.") from exc
 
     with httpx.Client() as http_client:
-        return http_client.get(url, headers=headers, timeout=DEFAULT_TIMEOUT_SECONDS)
+        return http_client.get(url, headers=headers, timeout=timeout_seconds)
+
+
+def _perform_post(
+    url: str,
+    *,
+    headers: dict[str, str],
+    json_payload: dict[str, Any],
+    client: HttpClient | None,
+    timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+) -> HttpResponse:
+    if client is not None and hasattr(client, "post"):
+        return client.post(url, headers=headers, json=json_payload, timeout=timeout_seconds)
+
+    try:
+        import httpx
+    except ModuleNotFoundError as exc:
+        raise RuntimeError("httpx is required for live provider validation.") from exc
+
+    with httpx.Client() as http_client:
+        return http_client.post(url, headers=headers, json=json_payload, timeout=timeout_seconds)
+
+
+def _ollama_install_guidance() -> str:
+    import platform
+
+    system_name = platform.system()
+    if system_name == "Darwin":
+        return "Install Ollama from https://ollama.com/download and start it with `ollama serve`."
+    if system_name == "Linux":
+        return "Install Ollama from https://ollama.com/download/linux and start it with `ollama serve`."
+    if system_name == "Windows":
+        return "Install Ollama from https://ollama.com/download/windows and start the Ollama app."
+    return "Install Ollama from https://ollama.com/download and start the local Ollama service."

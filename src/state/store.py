@@ -208,6 +208,19 @@ class SQLiteStateStore:
             rows = connection.execute(query, params).fetchall()
         return {str(row["key"]): str(row["value"]) for row in rows}
 
+    def delete_config_values(self, keys: tuple[str, ...]) -> int:
+        """Delete stale config keys from the SQLite-backed state contract."""
+
+        if not keys:
+            return 0
+        with self._connect() as connection:
+            return int(
+                connection.executemany(
+                    "DELETE FROM config_state WHERE key = ?",
+                    ((key,) for key in keys),
+                ).rowcount
+            )
+
     def upsert_managed_memory(
         self,
         *,

@@ -12,14 +12,17 @@ from dataclasses import dataclass
 import json
 import logging
 import unittest
+from unittest.mock import patch
 
 from duckln.ai_client import (
     ANTHROPIC_VERSION,
     AnthropicAdapter,
+    OllamaAdapter,
     OpenAIAdapter,
     OpenRouterAdapter,
     Provider,
     get_provider_adapter,
+    get_provider_adapter_for_base_url,
 )
 
 
@@ -39,6 +42,10 @@ class FakeHttpClient:
         self.calls: list[tuple[str, dict[str, str], float]] = []
 
     def get(self, url: str, *, headers: dict[str, str], timeout: float) -> FakeResponse:
+        self.calls.append((url, headers, timeout))
+        return self.responses[url]
+
+    def post(self, url: str, *, headers: dict[str, str], json: dict, timeout: float) -> FakeResponse:
         self.calls.append((url, headers, timeout))
         return self.responses[url]
 
@@ -63,6 +70,7 @@ class ProviderAdaptersReqR1Plan1Plan2Test(unittest.TestCase):
         self.assertIsInstance(get_provider_adapter(Provider.OPENROUTER), OpenRouterAdapter)
         self.assertIsInstance(get_provider_adapter(Provider.OPENAI), OpenAIAdapter)
         self.assertIsInstance(get_provider_adapter(Provider.ANTHROPIC), AnthropicAdapter)
+        self.assertIsInstance(get_provider_adapter(Provider.OLLAMA), OllamaAdapter)
 
     def test_r1_plan1_openrouter_lists_models_and_uses_bearer_auth(self) -> None:
         adapter = OpenRouterAdapter()
@@ -281,6 +289,81 @@ class ProviderAdaptersReqR1Plan1Plan2Test(unittest.TestCase):
         self.assertTrue(api_key_result.ok)
         self.assertTrue(model_result.ok)
         self.assertEqual("anthropic-key", client.calls[0][1]["x-api-key"])
+
+    def test_ollama_validation_lists_local_models_without_api_key(self) -> None:
+        adapter = OllamaAdapter()
+        client = FakeHttpClient(
+            {
+                adapter.models_url(): FakeResponse(
+                    status_code=200,
+                    payload={"models": [{"name": "llama3.2:latest"}, {"name": "qwen2.5:7b"}]},
+                )
+            }
+        )
+
+        api_key_result = adapter.validate_api_key(None, client=client)
+        model_result = adapter.validate_model(None, "llama3.2:latest", client=client, models=api_key_result.models)
+
+        self.assertTrue(api_key_result.ok)
+        self.assertEqual(("llama3.2:latest", "qwen2.5:7b"), tuple(model.id for model in api_key_result.models))
+        self.assertTrue(model_result.ok)
+        self.assertEqual("http://localhost:11434/api/tags", client.calls[0][0])
+        self.assertNotIn("Authorization", client.calls[0][1])
+
+    def test_ollama_adapter_uses_custom_base_url_and_normalizes_api_tags_suffix(self) -> None:
+        adapter = get_provider_adapter_for_base_url(
+            Provider.OLLAMA,
+            base_url="http://localhost:11555/api/tags",
+        )
+        client = FakeHttpClient(
+            {
+                "http://localhost:11555/api/tags": FakeResponse(
+                    status_code=200,
+                    payload={"models": [{"name": "llama3.2:latest"}]},
+                )
+            }
+        )
+
+        result = adapter.validate_api_key(None, client=client)
+
+        self.assertTrue(result.ok)
+        self.assertEqual("Ollama is reachable at http://localhost:11555/api/tags.", result.message)
+        self.assertEqual("http://localhost:11555/api/tags", client.calls[0][0])
+
+    def test_ollama_validation_distinguishes_installed_but_not_running(self) -> None:
+        adapter = OllamaAdapter()
+        client = RaisingHttpClient(OSError("connection refused"))
+
+        with patch("duckln.ai_client.shutil.which", return_value="/usr/local/bin/ollama"):
+            result = adapter.validate_api_key(None, client=client)
+
+        self.assertFalse(result.ok)
+        self.assertEqual(
+            "Ollama is installed but not running at http://localhost:11434/api/tags. "
+            "Start it with `ollama serve`, then retry detection.",
+            result.message,
+        )
+
+    def test_ollama_pull_model_posts_model_name_and_refreshes_tags(self) -> None:
+        adapter = OllamaAdapter()
+        client = FakeHttpClient(
+            {
+                "http://localhost:11434/api/tags": FakeResponse(
+                    status_code=200,
+                    payload={"models": [{"name": "mistral:latest"}]},
+                ),
+                "http://localhost:11434/api/pull": FakeResponse(
+                    status_code=200,
+                    payload={"status": "success"},
+                ),
+            }
+        )
+
+        result = adapter.pull_model(None, "mistral:latest", client=client)
+
+        self.assertTrue(result.ok)
+        self.assertEqual("Ollama model mistral:latest is ready locally.", result.message)
+        self.assertEqual("http://localhost:11434/api/pull", client.calls[0][0])
 
 
 if __name__ == "__main__":

@@ -9,7 +9,9 @@ from typing import Callable
 
 from agent.probe import SystemProbe, probe_system
 from duckln.config import ConfigPaths
+from duckln.diagnostics import redact_sensitive_data
 from duckln.shell import CommandResult, ControlledCommandRunner
+from state.access import write_config_snapshot
 from state.store import initialize_state_store
 
 
@@ -315,9 +317,17 @@ def _record_vm_state(
         vm_name=vm_name,
         mode=None,
         status=status,
-        summary=summary,
+        summary=redact_sensitive_data(summary),
         metadata=payload,
     )
+    if status in {"ready", "ready_without_duckln", "duckln_installed"}:
+        write_config_snapshot(
+            paths.config_dir,
+            {
+                "execution_target": "vm",
+                "execution_vm_name": vm_name,
+            },
+        )
 
 
 def _parse_positive_int(value: str, *, field_name: str) -> int:
@@ -332,6 +342,7 @@ def _parse_positive_int(value: str, *, field_name: str) -> int:
 
 def _command_failure_message(prefix: str, result: CommandResult) -> str:
     detail = " ".join(result.stderr.split()) if result.stderr.strip() else "No stderr output."
+    detail = redact_sensitive_data(detail)
     return f"{prefix}: {detail}"
 
 

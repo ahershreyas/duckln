@@ -168,6 +168,8 @@ class StateAccessTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             contract_source = Path(temp_dir) / "AGENTS.md"
             contract_source.write_text("# Root Contract\n\nStay concise.\n", encoding="utf-8")
+            config_file = Path(temp_dir) / "config.json"
+            config_file.write_text('{"provider": "openai", "api_key": "sk-secret-12345678"}\n', encoding="utf-8")
             write_skill_memory_state(
                 temp_dir,
                 slug="venv-fix",
@@ -176,7 +178,12 @@ class StateAccessTest(unittest.TestCase):
             )
             write_config_snapshot(temp_dir, {"provider": "openai"})
 
-            result = clear_memory_scope(temp_dir, scope="factory", contract_source=contract_source)
+            result = clear_memory_scope(
+                temp_dir,
+                scope="factory",
+                contract_source=contract_source,
+                config_file=config_file,
+            )
 
             self.assertTrue(result.cleared)
             self.assertEqual("Cleared Duckln state and reset managed memory.", result.summary)
@@ -185,6 +192,7 @@ class StateAccessTest(unittest.TestCase):
                 (Path(temp_dir) / "memory" / "AGENTS.md").read_text(encoding="utf-8").strip(),
             )
             self.assertFalse((Path(temp_dir) / "memory" / "skills" / "venv-fix.md").exists())
+            self.assertFalse(config_file.exists())
             with sqlite3.connect(temp_dir + "/state/duckln-state.sqlite3") as connection:
                 self.assertEqual(0, connection.execute("SELECT COUNT(*) FROM config_state").fetchone()[0])
                 self.assertEqual(1, connection.execute("SELECT COUNT(*) FROM managed_memory").fetchone()[0])

@@ -95,6 +95,10 @@
     {
       "name": "speechbrain",
       "repo_url": "https://github.com/speechbrain/speechbrain"
+    },
+    {
+      "name": "coqui-tts",
+      "repo_url": "https://github.com/coqui-ai/TTS"
     }
   ]
 }

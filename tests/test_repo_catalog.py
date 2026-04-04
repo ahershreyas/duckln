@@ -114,6 +114,7 @@ class RepoCatalogTest(unittest.TestCase):
         self.assertIn("openvino", overrides.blocklist)
         self.assertIn("whisperx", overrides.allowlist)
         self.assertIn("anythingllm", overrides.allowlist)
+        self.assertNotIn("coqui-tts", overrides.blocklist)
         self.assertEqual(resolve_launch_catalog_overrides_path().name, "launch_catalog_overrides.json")
         self.assertEqual("Python/vLLM", overrides.overrides["vllm"].framework)
         self.assertEqual("GPU recommended", overrides.overrides["vllm"].warning)
@@ -126,6 +127,7 @@ class RepoCatalogTest(unittest.TestCase):
         self.assertEqual(resolve_launch_catalog_seed_path().name, "launch_catalog_seed.json")
         self.assertEqual("AutoGPT", seed_entries[0].name)
         self.assertEqual("https://github.com/Significant-Gravitas/AutoGPT", seed_entries[0].repo_url)
+        self.assertIn("coqui-tts", {entry.name for entry in seed_entries})
 
     def test_initialize_local_repo_catalog_cache_copies_bundled_asset_once(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

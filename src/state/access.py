@@ -188,6 +188,7 @@ def clear_memory_scope(
     *,
     scope: str,
     contract_source: Path | None = None,
+    config_file: Path | None = None,
 ) -> MemoryClearResult:
     """Clear a bounded memory scope, resync files, and reclaim SQLite space."""
 
@@ -223,6 +224,9 @@ def clear_memory_scope(
 
     if scope == "factory":
         store.clear_factory_state()
+        resolved_config_file = config_file or (resolved_config_dir / "config.json")
+        if resolved_config_file.exists():
+            resolved_config_file.unlink()
         initialize_managed_memory_state(resolved_config_dir, contract_source=contract_source)
         store.vacuum()
         return MemoryClearResult(

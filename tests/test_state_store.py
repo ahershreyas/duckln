@@ -53,6 +53,9 @@ class StateStoreTest(unittest.TestCase):
                     "provider": "openai",
                     "model": "gpt-4o-mini",
                     "mode": "hotl",
+                    "user_name": "there",
+                    "safety_accepted_at": "1970-01-01T00:00:00+00:00",
+                    "onboarding_complete": "true",
                 },
                 rows,
             )
