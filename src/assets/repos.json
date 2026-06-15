@@ -1,236 +1,236 @@
 {
-  "last_updated": "2026-06-08",
+  "last_updated": "2026-06-15",
   "repos": [
     {
       "name": "AutoGPT",
       "repo_url": "https://github.com/Significant-Gravitas/AutoGPT",
-      "stars": 184844,
+      "stars": 184951,
       "description": "AutoGPT is the vision of accessible AI for everyone, to use and to build on. Our mission is to provide the tools, so that you can focus on what matters.",
       "category": "LLM",
       "framework": "Python",
-      "last_updated": "2026-06-08",
+      "last_updated": "2026-06-15",
       "warning": "Multi-service setup"
     },
     {
       "name": "stable-diffusion-webui",
       "repo_url": "https://github.com/AUTOMATIC1111/stable-diffusion-webui",
-      "stars": 163539,
+      "stars": 163726,
       "description": "Stable Diffusion web UI",
       "category": "Stable Diffusion",
       "framework": "Python/Stable Diffusion",
-      "last_updated": "2026-06-08"
+      "last_updated": "2026-06-15"
     },
     {
       "name": "open-webui",
       "repo_url": "https://github.com/open-webui/open-webui",
-      "stars": 140581,
+      "stars": 141601,
       "description": "User-friendly AI Interface (Supports Ollama, OpenAI API, ...)",
       "category": "LLM",
       "framework": "Python",
-      "last_updated": "2026-06-08"
+      "last_updated": "2026-06-15"
     },
     {
       "name": "ComfyUI",
       "repo_url": "https://github.com/Comfy-Org/ComfyUI",
-      "stars": 116165,
+      "stars": 117062,
       "description": "The most powerful and modular diffusion model GUI, api and backend with a graph/nodes interface.",
       "category": "Stable Diffusion",
       "framework": "Python/PyTorch",
-      "last_updated": "2026-06-08"
+      "last_updated": "2026-06-15"
     },
     {
       "name": "llama.cpp",
       "repo_url": "https://github.com/ggerganov/llama.cpp",
-      "stars": 115531,
+      "stars": 116607,
       "description": "LLM inference in C/C++",
       "category": "LLM",
       "framework": "C++/Local Runtime",
-      "last_updated": "2026-06-08",
+      "last_updated": "2026-06-15",
       "warning": "Non-Python setup"
     },
     {
       "name": "whisper",
       "repo_url": "https://github.com/openai/whisper",
-      "stars": 102151,
+      "stars": 102757,
       "description": "Robust Speech Recognition via Large-Scale Weak Supervision",
       "category": "Audio",
       "framework": "Python/PyTorch",
-      "last_updated": "2026-06-08"
+      "last_updated": "2026-06-15"
     },
     {
       "name": "vllm",
       "repo_url": "https://github.com/vllm-project/vllm",
-      "stars": 82213,
+      "stars": 82917,
       "description": "A high-throughput and memory-efficient inference and serving engine for LLMs",
       "category": "LLM",
       "framework": "Python/vLLM",
-      "last_updated": "2026-06-08",
+      "last_updated": "2026-06-15",
       "warning": "GPU recommended"
     },
     {
       "name": "gpt4all",
       "repo_url": "https://github.com/nomic-ai/gpt4all",
-      "stars": 77356,
+      "stars": 77369,
       "description": "GPT4All: Run Local LLMs on Any Device. Open-source and available for commercial use.",
       "category": "LLM",
       "framework": "C++/Local Runtime",
-      "last_updated": "2026-06-08",
+      "last_updated": "2026-06-15",
       "warning": "Non-Python setup"
     },
     {
       "name": "anything-llm",
       "repo_url": "https://github.com/Mintplex-Labs/anything-llm",
-      "stars": 61232,
+      "stars": 61612,
       "description": "Stop renting your intelligence. Own it with AnythingLLM. Everything you need for a powerful local-first agent experience",
       "category": "LLM",
       "framework": "TypeScript/Local App",
-      "last_updated": "2026-06-08",
+      "last_updated": "2026-06-15",
       "warning": "Non-Python setup"
     },
     {
       "name": "Real-Time-Voice-Cloning",
       "repo_url": "https://github.com/CorentinJ/Real-Time-Voice-Cloning",
-      "stars": 59900,
+      "stars": 59913,
       "description": "Clone a voice in 5 seconds to generate arbitrary speech in real-time",
       "category": "Audio",
       "framework": "Python/PyTorch",
-      "last_updated": "2026-06-08"
+      "last_updated": "2026-06-15"
     },
     {
       "name": "ultralytics",
       "repo_url": "https://github.com/ultralytics/ultralytics",
-      "stars": 58149,
+      "stars": 58422,
       "description": "Ultralytics YOLO \ud83d\ude80",
       "category": "Computer Vision",
       "framework": "Python/PyTorch",
-      "last_updated": "2026-06-08"
+      "last_updated": "2026-06-15"
     },
     {
       "name": "yolov5",
       "repo_url": "https://github.com/ultralytics/yolov5",
-      "stars": 57503,
-      "description": "YOLOv5 \ud83d\ude80 in PyTorch > ONNX > CoreML > TFLite",
+      "stars": 57523,
+      "description": "Ultralytics YOLOv5 in PyTorch > ONNX > CoreML > TFLite",
       "category": "Computer Vision",
       "framework": "Python/PyTorch",
-      "last_updated": "2026-06-08"
+      "last_updated": "2026-06-15"
     },
     {
       "name": "private-gpt",
       "repo_url": "https://github.com/zylon-ai/private-gpt",
-      "stars": 57206,
+      "stars": 57269,
       "description": "Interact with your documents using the power of GPT, 100% privately, no data leaks",
       "category": "LLM",
       "framework": "Python",
-      "last_updated": "2026-06-08"
+      "last_updated": "2026-06-15"
     },
     {
       "name": "segment-anything",
       "repo_url": "https://github.com/facebookresearch/segment-anything",
-      "stars": 54312,
+      "stars": 54342,
       "description": "The repository provides code for running inference with the SegmentAnything Model (SAM), links for downloading the trained model checkpoints, and example notebooks that show how to use the model.",
       "category": "Computer Vision",
       "framework": "Python/PyTorch",
-      "last_updated": "2026-06-08"
+      "last_updated": "2026-06-15"
     },
     {
       "name": "textgen",
       "repo_url": "https://github.com/oobabooga/text-generation-webui",
-      "stars": 47285,
+      "stars": 47313,
       "description": "Open-source desktop app for local LLMs. Text, vision, tool-calling, OpenAI/Anthropic-compatible API. 100% private.",
       "category": "LLM",
       "framework": "Python",
-      "last_updated": "2026-06-08"
+      "last_updated": "2026-06-15"
     },
     {
       "name": "LocalAI",
       "repo_url": "https://github.com/mudler/LocalAI",
-      "stars": 46741,
+      "stars": 46864,
       "description": "LocalAI is the open-source AI engine. Run any model - LLMs, vision, voice, image, video - on any hardware. No GPU required.",
       "category": "LLM",
       "framework": "Go/Local Runtime",
-      "last_updated": "2026-06-08",
+      "last_updated": "2026-06-15",
       "warning": "Non-Python setup"
     },
     {
       "name": "TTS",
       "repo_url": "https://github.com/coqui-ai/TTS",
-      "stars": 45509,
+      "stars": 45560,
       "description": "\ud83d\udc38\ud83d\udcac - a deep learning toolkit for Text-to-Speech, battle-tested in research and production",
       "category": "Audio",
       "framework": "Python/PyTorch",
-      "last_updated": "2026-06-08"
+      "last_updated": "2026-06-15"
     },
     {
       "name": "FastChat",
       "repo_url": "https://github.com/lm-sys/FastChat",
-      "stars": 39472,
+      "stars": 39470,
       "description": "An open platform for training, serving, and evaluating large language models. Release repo for Vicuna and Chatbot Arena.",
       "category": "LLM",
       "framework": "Python",
-      "last_updated": "2026-06-08"
+      "last_updated": "2026-06-14"
     },
     {
       "name": "bark",
       "repo_url": "https://github.com/suno-ai/bark",
-      "stars": 39150,
+      "stars": 39159,
       "description": "\ud83d\udd0a Text-Prompted Generative Audio Model",
       "category": "Audio",
       "framework": "Python/PyTorch",
-      "last_updated": "2026-06-08"
+      "last_updated": "2026-06-14"
     },
     {
       "name": "diffusers",
       "repo_url": "https://github.com/huggingface/diffusers",
-      "stars": 33801,
+      "stars": 33856,
       "description": "\ud83e\udd17 Diffusers: State-of-the-art diffusion models for image, video, and audio generation in PyTorch.",
       "category": "Stable Diffusion",
       "framework": "Python/Diffusers",
-      "last_updated": "2026-06-08"
+      "last_updated": "2026-06-15"
     },
     {
       "name": "InvokeAI",
       "repo_url": "https://github.com/invoke-ai/InvokeAI",
-      "stars": 27385,
+      "stars": 27432,
       "description": "Invoke is a leading creative engine for Stable Diffusion models, empowering professionals, artists, and enthusiasts to generate and create visual media using the latest AI-driven technologies. The solution offers an industry leading WebUI, and serves as the foundation for multiple commercial products.",
       "category": "Stable Diffusion",
       "framework": "Python/Stable Diffusion",
-      "last_updated": "2026-06-08"
+      "last_updated": "2026-06-15"
     },
     {
       "name": "faster-whisper",
       "repo_url": "https://github.com/SYSTRAN/faster-whisper",
-      "stars": 23466,
+      "stars": 23635,
       "description": "Faster Whisper transcription with CTranslate2",
       "category": "Audio",
       "framework": "Python/CTranslate2",
-      "last_updated": "2026-06-08"
+      "last_updated": "2026-06-15"
     },
     {
       "name": "whisperX",
       "repo_url": "https://github.com/m-bain/whisperX",
-      "stars": 22331,
+      "stars": 22491,
       "description": "WhisperX: Automatic Speech Recognition with Word-level Timestamps (& Diarization)",
       "category": "Audio",
       "framework": "Python/PyTorch",
-      "last_updated": "2026-06-08"
+      "last_updated": "2026-06-15"
     },
     {
       "name": "speechbrain",
       "repo_url": "https://github.com/speechbrain/speechbrain",
-      "stars": 11593,
+      "stars": 11615,
       "description": "A PyTorch-based Speech Toolkit",
       "category": "Audio",
       "framework": "Python/PyTorch",
-      "last_updated": "2026-06-08"
+      "last_updated": "2026-06-15"
     },
     {
       "name": "kokoro",
       "repo_url": "https://github.com/hexgrad/kokoro",
-      "stars": 7373,
+      "stars": 7478,
       "description": "https://hf.co/hexgrad/Kokoro-82M",
       "category": "Audio",
       "framework": "Python",
-      "last_updated": "2026-06-08"
+      "last_updated": "2026-06-15"
     }
   ]
 }
