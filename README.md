@@ -1,84 +1,139 @@
-# Duckln — Specification Driven Coding Framework
+# Duckln — an AI terminal mentor that fixes, verifies, and teaches
 
 ![Duckln](./docs/assets/duckln-banner.txt)
 
-Duckln is an AI-powered terminal mentor focused on **diagnosing, fixing, verifying, and teaching** inside the terminal loop.
-This repo contains a production-ready **Specification Driven Coding (SDC)** framework tailored for Duckln so a developer can implement features with clear requirements, plan coverage, tasks, validation, and release discipline.
+Duckln is an AI-powered, terminal-first agent that **sets up, runs, fixes, and explains code
+repositories** — locally, on an Ubuntu VM, in Docker, or in the cloud. It runs commands under a
+safety gate, recovers from failures with a reasoning + web-search loop, and keeps you in control
+of anything that changes your machine.
 
-## First-release product intent
+> ### 🚧 Status: early-stage, in active development
+> Duckln is **pre-1.0 (v0.1.0)** and evolving quickly. Interfaces, behavior, and internals can
+> change without notice, and some flows are best-effort. It is **not yet production-ready** — use
+> it for experimentation, and expect rough edges. Issues and PRs are welcome. (Following the
+> open-source norm, this notice is here so you know exactly what you're installing.)
 
-Duckln v1 should feel exciting because it does more than explain an error:
-1. Runs a terminal command safely.
+---
+
+## What it does
+
+1. Runs a terminal command safely (S0–S4 classification + your control mode).
 2. Detects what failed.
-3. Gathers only minimal relevant context.
+3. Gathers only the minimal relevant context (distilled, not a wall of logs).
 4. Produces exact next steps.
-5. Optionally runs approved fixes.
-6. Verifies whether the fix worked.
-7. Teaches the user what happened.
+5. Optionally runs approved fixes (and installs missing prerequisites like Multipass/Docker on consent).
+6. Verifies whether the fix actually worked.
+7. Teaches you what happened — and records its reasoning to a readable `logical-thinking.md`.
 
-## v1 scope
+**Supported today:** macOS + Ubuntu · zsh + bash · LLM providers **Ollama (local, free)**,
+OpenRouter, OpenAI, and Anthropic · modes **HITL** (explain only), **HOTL** (approve each step),
+**HOOTLWO** (auto-run safe steps, ask for the rest).
 
-- Platforms: macOS + Ubuntu
-- Shells: zsh + bash
-- LLM providers:
-  - OpenRouter
-  - OpenAI / ChatGPT API
-  - Anthropic / Claude API
-- Modes:
-  - HITL — explain and suggest only
-  - HOTL — suggest exact commands, user approves execution
-  - HOOTLWO — auto-run only whitelisted safe commands with explicit warning
+---
 
-## Folder structure
+## Requirements
 
-```text
-duckln_sdc_framework/
-├── docs/
-│   ├── assets/
-│   │   └── duckln-banner.txt
-│   ├── requirements.md
-│   ├── plan.md
-│   ├── tasks.md
-│   ├── analysis.md
-│   └── information_collected.md
-├── .sdc/
-│   ├── guidelines.md
-│   ├── feature_template.md
-│   ├── intake_checklist.md
-│   └── release_gate.md
-├── src/
-├── tests/
-└── README.md
+- **Python ≥ 3.11**
+- macOS or Ubuntu Linux
+- An LLM provider — either:
+  - **[Ollama](https://ollama.com/)** for a fully local, free model (e.g. `ollama pull gemma2:9b`), or
+  - an API key for OpenRouter / OpenAI / Anthropic
+- Optional (only for the VM/container targets): **[Multipass](https://multipass.run/)** and/or **Docker** — Duckln can offer to install these for you when a flow needs them.
+
+---
+
+## Installation
+
+Duckln isn't published to PyPI yet, so install it from source:
+
+```bash
+git clone https://github.com/ahershreyas/duckln.git
+cd duckln
+python3 -m venv .venv && source .venv/bin/activate   # recommended
+pip install -e .
 ```
 
-## SDC workflow
+Then run it:
 
-For every feature branch:
+```bash
+duckln
+```
 
-1. Fill `.sdc/feature_template.md`
-2. Update `docs/requirements.md`
-3. Update `docs/plan.md`
-4. Update `docs/tasks.md`
-5. Run `docs/analysis.md`
-6. Implement in `src/`
-7. Add or update tests in `tests/`
-8. Pass `.sdc/release_gate.md`
-9. Merge
+On first run, an onboarding flow helps you pick a provider + model (and pull an Ollama model if
+you go local). Type `/help` inside the app for commands.
 
-## Non-negotiables
+### Run without installing (from a source checkout)
 
-- No feature implementation without requirements, plan, tasks, and analysis.
-- No vague prompts like “build X.”
-- Every task must link back to at least one requirement.
-- Every requirement must map to at least one plan item and at least one task.
-- Every release must document:
-  - user-visible behavior
-  - privacy behavior
-  - failure behavior
-  - rollback path
+```bash
+PYTHONPATH=src python3 -m duckln.main
+```
 
-## Suggested developer handoff
+---
 
-Give the developer this exact instruction:
+## Usage
 
-> Implement Duckln by following the SDC artifacts in this repository. Do not skip requirements, plan, task linkage, or analysis. Preserve privacy-first telemetry, safe command execution, and mode-specific behavior. Any ambiguity must be resolved by updating the spec before coding.
+- Just talk to it in plain language: *"set up github.com/owner/repo"*, *"why did the build fail?"*,
+  *"list my VMs and their repos"*, *"stop"*.
+- Slash commands (type `/` to see them): `/repos`, `/vm`, `/cloud`, `/cleanup`, `/model`,
+  `/provider`, `/mode`, `/internet`, `/healthcheck`, `/help`.
+- Duckln keeps you in control: system-changing actions (installs, VM create, destructive steps)
+  are gated by your mode and a one-tap confirmation.
+
+---
+
+## Development
+
+```bash
+# from a source checkout, in your venv
+pip install -e .
+
+# run the full unit suite (unittest, ~2600 tests)
+PYTHONPATH=src python -m unittest discover -s tests -p 'test_*.py'
+
+# a single test file / method
+PYTHONPATH=src python -m unittest tests.test_ai_client
+PYTHONPATH=src python -m unittest tests.test_ai_client.ClassName.test_method
+```
+
+There's no dedicated lint step configured. Python ≥ 3.11 is required.
+
+### Project layout
+
+```text
+duckln/
+├── src/duckln/        # the app (main.py entry point, agents, tools, runtimes)
+├── src/agent/         # probes + per-stack playbooks (skills)
+├── src/state/         # SQLite-backed state (accessed only via state/access.py)
+├── tests/             # unittest suite, one file per module
+├── docs/              # SDC specs (requirements / plan / tasks / analysis) + knowledge
+└── .sdc/              # SDC guidelines, templates, release gate
+```
+
+### Contributing — Specification Driven Coding (SDC)
+
+This project follows an **SDC** discipline: specs come before code. For a non-trivial change:
+
+1. Update `docs/requirements.md` (user-visible behavior, privacy, failure modes, rollback).
+2. Link it in `docs/plan.md` (requirements → components).
+3. Add tasks in `docs/tasks.md` tagged `[REQ-N]`.
+4. Validate traceability in `docs/analysis.md`.
+5. Implement in `src/`, add/adjust tests in `tests/`, keep the suite green.
+
+Ambiguity is resolved by updating the spec first, then coding — never the reverse. See
+[`.sdc/guidelines.md`](.sdc/guidelines.md) and [`CLAUDE.md`](CLAUDE.md) for the full conventions.
+
+---
+
+## Safety & privacy
+
+- Commands are classified **S0–S4** (read-only → destructive); destructive/irreversible steps are
+  blocked by default and always require explicit consent.
+- Your control **mode** (HITL/HOTL/HOOTLWO) is enforced, never bypassed.
+- Duckln never stores raw API keys, full transcripts, or unredacted secrets — only compact,
+  redacted summaries (command names, exit codes, hardware probes, preferences).
+
+---
+
+## License
+
+See the repository for license details. Contributions are welcome via issues and pull requests.
