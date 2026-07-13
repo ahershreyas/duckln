@@ -8,9 +8,16 @@ import unittest
 
 from agent.memory import (
     AGENTS_FILE_NAME,
+    BOOTSTRAP_FILE_NAME,
+    IDENTITY_FILE_NAME,
     KNOWLEDGE_DIR_NAME,
     SESSIONS_DIR_NAME,
     SKILLS_DIR_NAME,
+    SOUL_FILE_NAME,
+    SUBAGENTS_DIR_NAME,
+    TOOLS_DOC_FILE_NAME,
+    TOOLS_FILE_NAME,
+    USER_FILE_NAME,
     initialize_agent_memory,
     materialize_memory_file,
     materialize_memory_view,
@@ -30,16 +37,30 @@ class AgentMemoryTest(unittest.TestCase):
             self.assertTrue(paths.skills_dir.is_dir())
             self.assertTrue(paths.knowledge_dir.is_dir())
             self.assertTrue(paths.sessions_dir.is_dir())
+            self.assertTrue(paths.subagents_dir.is_dir())
             self.assertFalse(paths.agents_file.exists())
+            self.assertFalse(paths.soul_file.exists())
+            self.assertFalse(paths.user_file.exists())
+            self.assertFalse(paths.identity_file.exists())
+            self.assertFalse(paths.tools_doc_file.exists())
+            self.assertFalse(paths.bootstrap_file.exists())
+            self.assertFalse(paths.tools_file.exists())
 
     def test_resolve_agent_memory_paths_uses_memory_root(self) -> None:
         paths = resolve_agent_memory_paths(Path("/tmp/duckln"))
 
         self.assertEqual("/tmp/duckln/memory", str(paths.memory_root))
         self.assertEqual(f"/tmp/duckln/memory/{AGENTS_FILE_NAME}", str(paths.agents_file))
+        self.assertEqual(f"/tmp/duckln/memory/{SOUL_FILE_NAME}", str(paths.soul_file))
+        self.assertEqual(f"/tmp/duckln/memory/{USER_FILE_NAME}", str(paths.user_file))
+        self.assertEqual(f"/tmp/duckln/memory/{IDENTITY_FILE_NAME}", str(paths.identity_file))
+        self.assertEqual(f"/tmp/duckln/memory/{TOOLS_DOC_FILE_NAME}", str(paths.tools_doc_file))
+        self.assertEqual(f"/tmp/duckln/memory/{BOOTSTRAP_FILE_NAME}", str(paths.bootstrap_file))
+        self.assertEqual(f"/tmp/duckln/memory/{TOOLS_FILE_NAME}", str(paths.tools_file))
         self.assertEqual(f"/tmp/duckln/memory/{SKILLS_DIR_NAME}", str(paths.skills_dir))
         self.assertEqual(f"/tmp/duckln/memory/{KNOWLEDGE_DIR_NAME}", str(paths.knowledge_dir))
         self.assertEqual(f"/tmp/duckln/memory/{SESSIONS_DIR_NAME}", str(paths.sessions_dir))
+        self.assertEqual(f"/tmp/duckln/memory/{SUBAGENTS_DIR_NAME}", str(paths.subagents_dir))
 
     def test_session_and_knowledge_writes_stay_high_signal(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -73,17 +94,31 @@ class AgentMemoryTest(unittest.TestCase):
                 paths,
                 (
                     (AGENTS_FILE_NAME, "# Contract\n\nKeep memory concise."),
+                    (SOUL_FILE_NAME, "# Soul\n\nStay calm."),
+                    (USER_FILE_NAME, "# User\n\nAlias: Shreyas"),
+                    (IDENTITY_FILE_NAME, "# Identity\n\nDuckln is a terminal companion."),
+                    (TOOLS_DOC_FILE_NAME, "# Tools\n\nUse the smallest useful tool."),
+                    (BOOTSTRAP_FILE_NAME, "# Bootstrap\n\nAsk for an alias first."),
+                    (TOOLS_FILE_NAME, '{\n  "tools": []\n}'),
                     (f"{SKILLS_DIR_NAME}/venv.md", "# Venv\n\nPrefer repo-local Python."),
                     (f"{KNOWLEDGE_DIR_NAME}/gpu.md", "# GPU\n\nCheck CUDA before recommending it."),
                     (f"{SESSIONS_DIR_NAME}/alpha.md", "Saved the shortest useful session summary."),
+                    (f"{SUBAGENTS_DIR_NAME}/python_setup/AGENTS.md", "# Python setup specialist\n\n## Scope\nBounded."),
                 ),
             )
 
-            self.assertEqual(4, len(materialized))
+            self.assertEqual(11, len(materialized))
             self.assertEqual("# Contract", paths.agents_file.read_text(encoding="utf-8").splitlines()[0])
+            self.assertTrue(paths.soul_file.exists())
+            self.assertTrue(paths.user_file.exists())
+            self.assertTrue(paths.identity_file.exists())
+            self.assertTrue(paths.tools_doc_file.exists())
+            self.assertTrue(paths.bootstrap_file.exists())
+            self.assertTrue(paths.tools_file.exists())
             self.assertTrue((paths.skills_dir / "venv.md").exists())
             self.assertTrue((paths.knowledge_dir / "gpu.md").exists())
             self.assertTrue((paths.sessions_dir / "alpha.md").exists())
+            self.assertTrue((paths.subagents_dir / "python_setup" / "AGENTS.md").exists())
 
     def test_materialize_memory_view_removes_stale_managed_files_but_keeps_other_cache_files(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

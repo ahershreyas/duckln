@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from duckln.config import (
     APP_DIR_NAME,
@@ -12,11 +13,14 @@ from duckln.config import (
     ENV_CONFIG_FILE,
     ENV_HOME,
     ENV_XDG_CONFIG_HOME,
+    _default_select_prompt,
+    _model_selection_ids,
     get_env_defaults,
     load_raw_config,
     resolve_config_paths,
     save_raw_config,
 )
+from duckln.ai_client import Provider, ProviderModel
 
 
 class ConfigHelpersTest(unittest.TestCase):
@@ -75,6 +79,27 @@ class ConfigHelpersTest(unittest.TestCase):
             save_raw_config(payload, paths)
 
             self.assertEqual(payload, load_raw_config(paths))
+
+    def test_default_select_prompt_uses_shared_selector(self) -> None:
+        with patch("duckln.config.duckln_select", return_value="Yes") as mocked_select:
+            selected = _default_select_prompt("Continue?", ("Yes", "No"))
+
+        self.assertEqual("Yes", selected)
+        mocked_select.assert_called_once_with("Continue?", ("Yes", "No"))
+
+    def test_openrouter_model_choices_include_full_model_list(self) -> None:
+        models = (
+            ProviderModel(id="openai/gpt-4o-mini", display_name="GPT-4o mini"),
+            ProviderModel(id="google/gemma-3-27b-it:free", display_name="Gemma"),
+            ProviderModel(id="custom/model-a", display_name="Model A"),
+        )
+
+        selected = _model_selection_ids(Provider.OPENROUTER, models)
+
+        self.assertEqual(
+            ("openai/gpt-4o-mini", "google/gemma-3-27b-it:free", "custom/model-a"),
+            selected,
+        )
 
 
 if __name__ == "__main__":

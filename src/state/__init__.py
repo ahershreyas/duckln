@@ -37,6 +37,7 @@ from .repo_catalog import (
 )
 from .store import (
     ManagedMemoryRecord,
+    RepoKnowledgeRecord,
     STATE_DB_FILE_NAME,
     STATE_DIR_NAME,
     SQLiteStateStore,
@@ -49,6 +50,7 @@ __all__ = [
     "STATE_DB_FILE_NAME",
     "STATE_DIR_NAME",
     "ManagedMemoryRecord",
+    "RepoKnowledgeRecord",
     "MemoryClearResult",
     "LAUNCH_CATALOG_OVERRIDES_FILE_NAME",
     "LAUNCH_CATALOG_SEED_FILE_NAME",

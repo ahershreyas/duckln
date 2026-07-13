@@ -236,67 +236,37 @@ class RepoCatalogTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             config_dir = Path(temp_dir)
             initialize_local_repo_catalog_cache(config_dir)
-            client = FakeGitHubClient(
-                {
-                    "machine-learning": FakeResponse(
-                        200,
-                        {
-                            "items": [
-                                {
-                                    "name": "alpha",
-                                    "html_url": "https://github.com/example/alpha",
-                                    "stargazers_count": 50,
-                                    "description": "Alpha ML repo",
-                                    "language": "Python",
-                                    "topics": ["machine-learning", "pytorch"],
-                                    "updated_at": "2026-03-20T12:00:00Z",
-                                },
-                                {
-                                    "name": "shared",
-                                    "html_url": "https://github.com/example/shared",
-                                    "stargazers_count": 10,
-                                    "description": "Shared repo",
-                                    "language": "Python",
-                                    "topics": ["machine-learning"],
-                                    "updated_at": "2026-03-18T12:00:00Z",
-                                },
-                            ]
-                        },
-                    ),
-                    "deep-learning": FakeResponse(200, {"items": []}),
-                    "llm": FakeResponse(
-                        200,
-                        {
-                            "items": [
-                                {
-                                    "name": "shared",
-                                    "html_url": "https://github.com/example/shared",
-                                    "stargazers_count": 25,
-                                    "description": "Shared repo updated",
-                                    "language": "Python",
-                                    "topics": ["llm", "huggingface"],
-                                    "updated_at": "2026-03-21T12:00:00Z",
-                                }
-                            ]
-                        },
-                    ),
-                    "stable-diffusion": FakeResponse(200, {"items": []}),
-                    "computer-vision": FakeResponse(200, {"items": []}),
-                    "pytorch": FakeResponse(200, {"items": []}),
-                    "huggingface": FakeResponse(200, {"items": []}),
-                }
+            curated_records = (
+                RepoCatalogRecord(
+                    name="alpha",
+                    repo_url="https://github.com/example/alpha",
+                    stars=50,
+                    description="Alpha ML repo",
+                    category="LLM",
+                    framework="Python",
+                    last_updated="2026-03-20",
+                ),
+                RepoCatalogRecord(
+                    name="curated-only",
+                    repo_url="https://github.com/example/curated-only",
+                    stars=25,
+                    description="Curated launch repo",
+                    category="Audio",
+                    framework="Python",
+                    last_updated="2026-03-21",
+                    warning="GPU recommended",
+                ),
             )
-
-            result = refresh_local_repo_catalog(config_dir, client=client, per_topic_limit=5)
+            with patch("state.repo_catalog.generate_bundled_repo_catalog", return_value=curated_records) as generate_catalog:
+                result = refresh_local_repo_catalog(config_dir, client=object(), per_topic_limit=5)
 
             self.assertTrue(result.ok)
-            self.assertEqual(("alpha", "shared"), tuple(record.name for record in result.records))
-            self.assertEqual(25, result.records[1].stars)
-            self.assertEqual("LLM", result.records[1].category)
-            self.assertEqual("Python/Hugging Face", result.records[1].framework)
+            self.assertEqual(("alpha", "curated-only"), tuple(record.name for record in result.records))
+            generate_catalog.assert_called_once()
 
             cached_payload = json.loads(resolve_local_repo_catalog_cache_path(config_dir).read_text(encoding="utf-8"))
-            self.assertEqual(("alpha", "shared"), tuple(item["name"] for item in cached_payload["repos"]))
+            self.assertEqual(("alpha", "curated-only"), tuple(item["name"] for item in cached_payload["repos"]))
+            self.assertEqual("GPU recommended", cached_payload["repos"][1]["warning"])
 
     def test_refresh_local_repo_catalog_preserves_previous_cache_on_failure(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -318,20 +288,11 @@ class RepoCatalogTest(unittest.TestCase):
                 ],
             }
             cache_path.write_text(json.dumps(original_payload) + "\n", encoding="utf-8")
-
-            client = FakeGitHubClient(
-                {
-                    "machine-learning": FakeResponse(200, {"items": []}),
-                    "deep-learning": FakeResponse(200, {"items": []}),
-                    "llm": FakeResponse(503, {"message": "Service unavailable"}),
-                    "stable-diffusion": FakeResponse(200, {"items": []}),
-                    "computer-vision": FakeResponse(200, {"items": []}),
-                    "pytorch": FakeResponse(200, {"items": []}),
-                    "huggingface": FakeResponse(200, {"items": []}),
-                }
-            )
-
-            result = refresh_local_repo_catalog(config_dir, client=client, per_topic_limit=5)
+            with patch(
+                "state.repo_catalog.generate_bundled_repo_catalog",
+                side_effect=RuntimeError("GitHub topic fetch failed"),
+            ):
+                result = refresh_local_repo_catalog(config_dir, client=object(), per_topic_limit=5)
 
             self.assertFalse(result.ok)
             self.assertIn("Repo catalog refresh failed:", result.message)

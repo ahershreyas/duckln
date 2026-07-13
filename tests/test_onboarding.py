@@ -34,9 +34,19 @@ class FakeResponse:
         return self.payload
 
 
+# Plan 121: onboarding now performs a real round-trip (verify_live_reply) after the
+# key validates. This canned reply satisfies every adapter's parse_conversation_text
+# (OpenAI choices / Anthropic content / Ollama response) so the round-trip succeeds.
+_CONVERSATION_REPLY_PAYLOAD = {
+    "choices": [{"message": {"content": "Connection OK — test reply."}}],
+    "content": [{"type": "text", "text": "Connection OK — test reply."}],
+    "response": "Connection OK — test reply.",
+}
+
+
 class FakeHttpClient:
-    def __init__(self, responses: dict[str, FakeResponse]) -> None:
-        self.responses = responses
+    def __init__(self, responses: dict[str, FakeResponse] | None = None) -> None:
+        self.responses = responses or {}
 
     def get(self, url: str, *, headers: dict[str, str], timeout: float) -> FakeResponse:
         response = self.responses[url]
@@ -44,6 +54,10 @@ class FakeHttpClient:
             auth_header = headers.get("Authorization") or headers.get("x-api-key") or ""
             return response[auth_header]
         return response
+
+    def post(self, url: str, *, headers: dict[str, str], json: dict, timeout: float) -> FakeResponse:
+        # The live verification round-trip — answer any conversation POST with a reply.
+        return FakeResponse(status_code=200, payload=dict(_CONVERSATION_REPLY_PAYLOAD))
 
 
 class FakePullProcess:
@@ -79,7 +93,8 @@ class OnboardingFlowTest(unittest.TestCase):
             self.assertTrue(preferences.safety_accepted_at)
             self.assertFalse(preferences.onboarding_complete)
             self.assertEqual(preferences, load_user_preferences(paths))
-            self.assertTrue(any("Safety & Permissions" in message for message in displayed))
+            self.assertTrue(any("◆ Duckln" in message and "Safety & Permissions" in message for message in displayed))
+            self.assertTrue(any("🐣 Hey there! I'm Duckln." in message for message in displayed))
 
     def test_save_app_config_preserves_user_preferences_and_marks_onboarding_complete(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -148,6 +163,11 @@ class OnboardingFlowTest(unittest.TestCase):
                 "safety_accepted_at": "1970-01-01T00:00:00+00:00",
                 "onboarding_complete": True,
                 "preferred_mode": None,
+                "failure_window_hours": 24.0,
+                "font_setup_acknowledged": False,
+                "plan_mode_enabled": False,
+                "plan_precheck": "ask",
+                "duckln_ui": "auto",
             },
             payload,
         )
@@ -161,6 +181,7 @@ class OnboardingFlowTest(unittest.TestCase):
                 model="gpt-4o-mini",
                 api_key="openai-key",
                 mode=ControlMode.HOTL,
+                plan_mode_enabled=True,  # Plan 188: load_app_config always returns Plan Mode on
             )
 
             save_app_config(config, paths)
@@ -342,7 +363,7 @@ class OnboardingFlowTest(unittest.TestCase):
                 )
             )
 
-            class CustomBaseUrlClient:
+            class CustomBaseUrlClient(FakeHttpClient):
                 def get(self, url: str, *, headers: dict[str, str], timeout: float) -> FakeResponse:
                     if url == "http://localhost:11434/api/tags":
                         raise OSError("connection refused")
@@ -376,7 +397,7 @@ class OnboardingFlowTest(unittest.TestCase):
             selections = iter(("Ollama", "Start Ollama now", "llama3.2:latest", "HITL"))
             process_calls: list[list[str]] = []
 
-            class RecoveringOllamaClient:
+            class RecoveringOllamaClient(FakeHttpClient):
                 def __init__(self) -> None:
                     self.calls = 0
 
@@ -417,10 +438,12 @@ class OnboardingFlowTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             paths = resolve_config_paths({"DUCKLN_CONFIG_DIR": temp_dir})
             displayed: list[str] = []
-            selections = iter(("Ollama", "Pull a new model", "HITL"))
+            # Plan 182 F2: "Pull a new model" now opens a curated pick-list; choosing
+            # "Type an exact model name…" reaches the text prompt for an unlisted tag.
+            selections = iter(("Ollama", "Pull a new model", "Type an exact model name…", "HITL"))
             case = self
 
-            class PullableOllamaClient:
+            class PullableOllamaClient(FakeHttpClient):
                 def __init__(self) -> None:
                     self.models = ["llama3.2:latest"]
 
@@ -456,7 +479,10 @@ class OnboardingFlowTest(unittest.TestCase):
             self.assertEqual("http://localhost:11434", result.config.base_url)
             self.assertEqual([["ollama", "pull", "mistral:latest"]], popen_calls)
             self.assertIn("Running `ollama pull mistral:latest`...", displayed)
-            self.assertIn("pulling manifest", displayed)
+            # Plan 186 F1a: raw phase lines ("pulling manifest") no longer stack in chat —
+            # a single confirmation is shown when the download completes.
+            self.assertNotIn("pulling manifest", displayed)
+            self.assertIn("✓ mistral:latest downloaded and ready.", displayed)
             self.assertIn("Ollama is reachable at http://localhost:11434/api/tags.", displayed)
 
     def test_onboarding_ollama_model_menu_shows_ram_filtered_recommendations_and_manual_entry(self) -> None:
@@ -466,7 +492,7 @@ class OnboardingFlowTest(unittest.TestCase):
             displayed: list[str] = []
             selections = iter(("Ollama", "llama3.2:3b [recommended]", "HITL"))
 
-            class PullableOllamaClient:
+            class PullableOllamaClient(FakeHttpClient):
                 def __init__(self) -> None:
                     self.models = ["llama3.2:latest"]
 
@@ -510,6 +536,8 @@ class OnboardingFlowTest(unittest.TestCase):
                         "phi3:mini [recommended]",
                         "Pull a new model",
                         "Enter a model name manually",
+                        # Plan 186 F1b: a "Remove an installed model…" option when models are installed.
+                        "Remove an installed model…",
                     ),
                 ),
                 prompts,
@@ -520,7 +548,7 @@ class OnboardingFlowTest(unittest.TestCase):
             paths = resolve_config_paths({"DUCKLN_CONFIG_DIR": temp_dir})
             selections = iter(("Ollama", "Enter a model name manually", "HITL"))
 
-            class PullableOllamaClient:
+            class PullableOllamaClient(FakeHttpClient):
                 def __init__(self) -> None:
                     self.models: list[str] = []
 
@@ -666,7 +694,7 @@ class OnboardingFlowTest(unittest.TestCase):
             displayed: list[str] = []
             selections = iter(("Anthropic", "Use this key", "Cancel onboarding"))
 
-            class FailingHttpClient:
+            class FailingHttpClient(FakeHttpClient):
                 def get(self, url: str, *, headers: dict[str, str], timeout: float) -> FakeResponse:
                     raise OSError("network down")
 

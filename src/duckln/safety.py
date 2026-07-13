@@ -39,7 +39,29 @@ BLOCKED_COMMAND_PATTERNS: tuple[tuple[str, str], ...] = (
     (r"(^|\s)(shutdown|reboot|halt)\b", "System power commands are blocked."),
 )
 
+# Plan 142 F1: a "safe arguments" fragment for read-only diagnostics — any chars EXCEPT
+# shell metacharacters that could chain / redirect / substitute a command (`;`, `&`, `|`,
+# `$`, backtick, `<`, `>`, `(`, `)`, `{`, `}`, newline). With `^…$` anchoring this means a
+# read command like `cat foo; rm -rf /` can NEVER match as S0 (the `;…` breaks the match),
+# and `match_blocked_command` runs first regardless. Widens the S0 set so the reasoning
+# agent can actually INVESTIGATE (ls/cat/grep/find/uname/id/os-release/versions/git status).
+_RO_ARGS = r"[^;&|$`<>(){}\n]*"
+_RO_ARG1 = r"[^;&|$`<>(){}\n]+"
+
 HOOTLWO_DIAGNOSTIC_PATTERNS: tuple[tuple[str, SafetyClass, str], ...] = (
+    # Plan 142 F1 — generic read-only diagnostics (never mutate the filesystem).
+    (rf"^\s*(ls|cat|head|tail|wc|file|stat|realpath|readlink|basename|dirname|tree|grep|egrep|fgrep|nl|env|printenv|uname|hostname|whoami|id|groups|df|du|free|nproc|lscpu|lsb_release|ps|date|uptime|cat\s+/etc/os-release){_RO_ARGS}$", SafetyClass.S0, "Read-only diagnostic command."),
+    # `find` is read-only ONLY without its mutating/exec actions.
+    (rf"^\s*find\b(?!{_RO_ARGS}-(?:delete|exec|execdir|ok|okdir|fprint|fprintf|fls)\b){_RO_ARGS}$", SafetyClass.S0, "Read-only file search."),
+    (rf"^\s*(command\s+-v|type)\s+{_RO_ARG1}$", SafetyClass.S0, "Tool availability check."),
+    (r"^\s*(node|npm|pnpm|yarn|bun|deno|cargo|rustc|rustup|go|java|ruby|php|dotnet|gcc|g\+\+|clang|make|cmake)\s+(--version|-v|-V|version)\s*$", SafetyClass.S0, "Tool version check."),
+    (rf"^\s*npm\s+(ls|list|view|root|why|outdated|config\s+get){_RO_ARGS}$", SafetyClass.S0, "npm read command."),
+    (rf"^\s*cargo\s+(metadata|tree){_RO_ARGS}$", SafetyClass.S0, "cargo read command."),
+    (rf"^\s*go\s+(version|env|list){_RO_ARGS}$", SafetyClass.S0, "go read command."),
+    (rf"^\s*(dpkg|dpkg-query)\s+(-l|-s|-L|-W|--audit|--get-selections|--status|--list|--listfiles){_RO_ARGS}$", SafetyClass.S0, "dpkg read command."),
+    (rf"^\s*apt-cache\s+(policy|show|showpkg|search|madison|depends|rdepends){_RO_ARGS}$", SafetyClass.S0, "apt-cache read command."),
+    (rf"^\s*git\s+(status|log|remote|rev-parse|branch|diff|show|ls-files|describe|symbolic-ref|cat-file|config|for-each-ref|tag|shortlog){_RO_ARGS}$", SafetyClass.S0, "git read command."),
+    (r"^\s*sudo\s+-n\s+true\s*$", SafetyClass.S0, "Sudo capability check."),
     (r"^\s*python(\d+(\.\d+)*)?\s+--version\s*$", SafetyClass.S0, "Python version check."),
     (r"^\s*[A-Za-z0-9._/-]+/python\s+--version\s*$", SafetyClass.S0, "Project Python version check."),
     (r"^\s*python(\d+(\.\d+)*)?\s+-m\s+pip\s+--version\s*$", SafetyClass.S0, "Pip version check."),
@@ -54,6 +76,11 @@ HOOTLWO_DIAGNOSTIC_PATTERNS: tuple[tuple[str, SafetyClass, str], ...] = (
 )
 
 HOOTLWO_INSTALL_PATTERNS: tuple[tuple[str, SafetyClass, str], ...] = (
+    (
+        r"^\s*git\s+clone\s+--depth\s+1\s+https://[A-Za-z0-9./:_-]+\s+.+$",
+        SafetyClass.S1,
+        "Shallow repository clone into Duckln-managed workspace.",
+    ),
     (r"^\s*pip\s+install\s+[A-Za-z0-9._\-\[\]=<>! ]+\s*$", SafetyClass.S1, "Package install command."),
     (
         r"^\s*python(\d+(\.\d+)*)?\s+-m\s+pip\s+install\s+[A-Za-z0-9._\-\[\]=<>! ]+\s*$",
@@ -81,8 +108,15 @@ ELEVATED_COMMAND_PATTERNS: tuple[tuple[str, SafetyClass, str], ...] = (
 )
 
 
-def assess_command(command: str) -> SafetyAssessment:
-    """Classify a command for blocking, approval, or whitelisted auto-run."""
+def assess_command(command: str, *, execution_target: str | None = None) -> SafetyAssessment:
+    """Classify a command for blocking, approval, or whitelisted auto-run.
+
+    Plan 58 Bug C: when execution_target is a remote Linux target
+    (vm/aws/gcp/ssh), reject commands that invoke `brew` — brew is macOS-only,
+    so the command will fail on the remote. This is defense-in-depth against
+    any code path that derives an install command from the local host's OS
+    instead of the target's OS.
+    """
 
     normalized = command.strip()
     if not normalized:
@@ -91,6 +125,41 @@ def assess_command(command: str) -> SafetyAssessment:
             blocked=True,
             reason="Empty commands are blocked.",
         )
+
+    if execution_target in {"vm", "aws", "gcp", "ssh"}:
+        if re.match(r"^\s*(sudo\s+)?brew\b", normalized):
+            return SafetyAssessment(
+                safety_class=SafetyClass.S3,
+                blocked=True,
+                whitelisted=False,
+                reason=(
+                    "brew is macOS-only; this target is a Linux VM. Use apt-based "
+                    "install commands instead."
+                ),
+            )
+        # Plan 61 Fix A: winget / choco are Windows-only; block on Linux VM/cloud.
+        if re.match(r"^\s*winget\b", normalized) or re.match(r"^\s*choco\b", normalized):
+            return SafetyAssessment(
+                safety_class=SafetyClass.S3,
+                blocked=True,
+                whitelisted=False,
+                reason=(
+                    "winget/choco are Windows-only; this target is a Linux VM. "
+                    "Use apt-based install commands instead."
+                ),
+            )
+    # Plan 61 Fix A: block apt/sudo apt when local target is Windows.
+    if execution_target == "windows_local":
+        if re.match(r"^\s*(sudo\s+)?apt(-get)?\b", normalized):
+            return SafetyAssessment(
+                safety_class=SafetyClass.S3,
+                blocked=True,
+                whitelisted=False,
+                reason=(
+                    "apt is Linux-only; this host is Windows. Use winget install "
+                    "commands instead."
+                ),
+            )
 
     blocked = match_blocked_command(normalized)
     if blocked is not None:

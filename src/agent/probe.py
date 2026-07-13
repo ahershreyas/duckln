@@ -3,15 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import importlib
-import importlib.util
 import os
 from pathlib import Path
 import platform
 import shutil
 import subprocess
 import sys
-from typing import Any
 
 
 GIB = 1024**3
@@ -96,7 +93,7 @@ def probe_system() -> SystemProbe:
     return SystemProbe(
         operating_system=operating_system,
         architecture=architecture,
-        cpu_logical_cores=os.cpu_count(),
+        cpu_logical_cores=_detect_cpu_logical_cores(operating_system),
         ram_bytes=_detect_ram_bytes(operating_system),
         disk_free_bytes=_detect_disk_free_bytes(),
         python_version=platform.python_version(),
@@ -120,64 +117,29 @@ def _detect_gpu(operating_system: str, architecture: str) -> GpuProbeState:
 
 
 def _detect_mps_state() -> GpuProbeState:
-    torch_module = _load_torch_module()
-    mps_available = False
-    if torch_module is not None:
-        try:
-            backend = getattr(torch_module.backends, "mps", None)
-            if backend is not None and callable(getattr(backend, "is_available", None)):
-                mps_available = bool(backend.is_available())
-        except Exception:
-            mps_available = False
+    """Apple Silicon hardware always exposes MPS; we don't import torch on the hot path."""
 
-    summary = "Apple Silicon detected; MPS available." if mps_available else "Apple Silicon detected; use CPU or MPS when available."
     return GpuProbeState(
         backend="mps",
-        summary=summary,
+        summary="Apple Silicon detected; MPS available.",
         cuda_capable=False,
         cuda_available=False,
         mps_capable=True,
-        mps_available=mps_available,
+        mps_available=True,
     )
 
 
 def _detect_cuda_state() -> GpuProbeState:
-    torch_module = _load_torch_module()
-    torch_cuda_available = False
-    torch_cuda_built = False
-    if torch_module is not None:
-        try:
-            torch_cuda_available = bool(torch_module.cuda.is_available())
-            torch_cuda_built = getattr(torch_module.version, "cuda", None) is not None
-        except Exception:
-            torch_cuda_available = False
-            torch_cuda_built = False
+    """Use nvidia-smi for hardware detection so we avoid importing torch at startup."""
 
     nvidia_gpu_names = _read_nvidia_gpu_names()
-    cuda_capable = bool(nvidia_gpu_names) or torch_cuda_built
-
-    if torch_cuda_available:
-        summary = "CUDA available in Python."
-        if nvidia_gpu_names:
-            summary = f"CUDA available in Python ({nvidia_gpu_names[0]})."
+    if nvidia_gpu_names:
+        summary = f"NVIDIA GPU detected ({nvidia_gpu_names[0]})."
         return GpuProbeState(
             backend="cuda",
             summary=summary,
             cuda_capable=True,
             cuda_available=True,
-            mps_capable=False,
-            mps_available=False,
-        )
-
-    if cuda_capable:
-        summary = "NVIDIA GPU detected, but CUDA is not ready in Python."
-        if nvidia_gpu_names:
-            summary = f"NVIDIA GPU detected ({nvidia_gpu_names[0]}), but CUDA is not ready in Python."
-        return GpuProbeState(
-            backend="cuda",
-            summary=summary,
-            cuda_capable=True,
-            cuda_available=False,
             mps_capable=False,
             mps_available=False,
         )
@@ -190,15 +152,6 @@ def _detect_cuda_state() -> GpuProbeState:
         mps_capable=False,
         mps_available=False,
     )
-
-
-def _load_torch_module() -> Any | None:
-    if importlib.util.find_spec("torch") is None:
-        return None
-    try:
-        return importlib.import_module("torch")
-    except Exception:
-        return None
 
 
 def _read_nvidia_gpu_names() -> tuple[str, ...]:
@@ -235,8 +188,82 @@ def _detect_ram_bytes(operating_system: str) -> int | None:
             if page_size > 0 and page_count > 0:
                 return page_size * page_count
         except (OSError, ValueError, TypeError):
-            return None
+            pass
+    if operating_system == "Darwin":
+        return _detect_macos_ram_bytes()
+    if operating_system == "Linux":
+        return _detect_linux_ram_bytes()
     return None
+
+
+def _detect_cpu_logical_cores(operating_system: str) -> int | None:
+    cpu_count = os.cpu_count()
+    if cpu_count is not None and cpu_count > 0:
+        return int(cpu_count)
+    if operating_system == "Darwin":
+        return _read_positive_int_command(("sysctl", "-n", "hw.logicalcpu"))
+    if operating_system == "Linux":
+        return _detect_linux_cpu_count()
+    if operating_system == "Windows":
+        env_value = os.environ.get("NUMBER_OF_PROCESSORS", "").strip()
+        if env_value.isdigit():
+            cores = int(env_value)
+            if cores > 0:
+                return cores
+    return None
+
+
+def _detect_macos_ram_bytes() -> int | None:
+    return _read_positive_int_command(("sysctl", "-n", "hw.memsize"))
+
+
+def _detect_linux_ram_bytes() -> int | None:
+    try:
+        meminfo = Path("/proc/meminfo").read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return None
+    match = next((line for line in meminfo.splitlines() if line.startswith("MemTotal:")), None)
+    if not match:
+        return None
+    parts = match.split()
+    if len(parts) < 2 or not parts[1].isdigit():
+        return None
+    kib = int(parts[1])
+    return kib * 1024 if kib > 0 else None
+
+
+def _detect_linux_cpu_count() -> int | None:
+    nproc = shutil.which("nproc")
+    if nproc:
+        result = _read_positive_int_command((nproc,))
+        if result is not None:
+            return result
+    try:
+        cpuinfo = Path("/proc/cpuinfo").read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return None
+    processor_lines = [line for line in cpuinfo.splitlines() if line.lower().startswith("processor")]
+    return len(processor_lines) or None
+
+
+def _read_positive_int_command(command: tuple[str, ...]) -> int | None:
+    try:
+        completed = subprocess.run(
+            list(command),
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if completed.returncode != 0:
+        return None
+    value = completed.stdout.strip()
+    if not value.isdigit():
+        return None
+    parsed = int(value)
+    return parsed if parsed > 0 else None
 
 
 def _detect_windows_ram_bytes() -> int | None:

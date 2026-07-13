@@ -337,13 +337,13 @@ def refresh_local_repo_catalog(
     client: Any | None = None,
     per_topic_limit: int = DEFAULT_TOPIC_FETCH_LIMIT,
 ) -> RepoCatalogRefreshResult:
-    """Refresh the local repo catalog from GitHub topics, preserving cache on failure."""
+    """Refresh the local curated repo catalog, preserving cache on failure."""
 
     cache_path = initialize_local_repo_catalog_cache(config_dir)
     previous_cache = cache_path.read_text(encoding="utf-8")
 
     try:
-        records = _fetch_repo_catalog_records(client=client, per_topic_limit=per_topic_limit)
+        records = generate_bundled_repo_catalog(client=client, per_topic_limit=per_topic_limit)
         _write_repo_catalog_file(cache_path, records)
     except Exception as exc:
         if not cache_path.exists():
@@ -475,6 +475,17 @@ def _fetch_github_repo_by_url(repo_url: str, *, client: Any | None) -> dict[str,
     if not isinstance(payload, dict):
         raise RepoCatalogRefreshError(f"GitHub repo fetch returned an invalid payload for '{repo_url}'.")
     return payload
+
+
+def resolve_public_github_repo_record(repo_url: str, *, client: Any | None = None) -> RepoCatalogRecord:
+    """Resolve a public GitHub URL into a normalized runtime repo record."""
+
+    payload = _fetch_github_repo_by_url(repo_url, client=client)
+    visibility = str(payload.get("visibility") or "").strip().lower()
+    if visibility == "private" or bool(payload.get("private")):
+        raise RepoCatalogRefreshError("Duckln can inspect only public GitHub repos right now.")
+    topic = _infer_topic_from_payload(payload)
+    return _normalize_github_repo(payload, topic=topic, bundled_launch_catalog=False)
 
 
 def _extract_github_repo_path(repo_url: str) -> str:

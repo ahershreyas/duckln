@@ -11,6 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import logging
+from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -21,9 +23,12 @@ from duckln.ai_client import (
     OpenAIAdapter,
     OpenRouterAdapter,
     Provider,
+    generate_provider_reply,
     get_provider_adapter,
     get_provider_adapter_for_base_url,
 )
+from duckln.usage_meter import reset_usage_snapshot
+from state.store import initialize_state_store
 
 
 @dataclass
@@ -220,6 +225,71 @@ class ProviderAdaptersReqR1Plan1Plan2Test(unittest.TestCase):
         self.assertTrue(result.ok)
         self.assertEqual(("openrouter/auto", "openai/gpt-4o-mini"), tuple(model.id for model in result.models))
 
+    def test_generate_provider_reply_uses_openrouter_chat_completion_endpoint(self) -> None:
+        client = FakeHttpClient(
+            {
+                "https://openrouter.ai/api/v1/chat/completions": FakeResponse(
+                    status_code=200,
+                    payload={
+                        "usage": {"prompt_tokens": 30, "completion_tokens": 12, "total_tokens": 42},
+                        "choices": [
+                            {
+                                "message": {
+                                    "content": "I’m ready to help with the next setup step."
+                                }
+                            }
+                        ]
+                    },
+                )
+            }
+        )
+
+        reply = generate_provider_reply(
+            Provider.OPENROUTER,
+            model_id="openai/gpt-4o-mini",
+            api_key="router-key",
+            base_url=None,
+            system_prompt="You are Duckln.",
+            user_message="hello",
+            recent_turns=(("user", "hi"),),
+            client=client,
+        )
+
+        self.assertEqual("I’m ready to help with the next setup step.", reply)
+        self.assertEqual("https://openrouter.ai/api/v1/chat/completions", client.calls[0][0])
+        self.assertEqual("Bearer router-key", client.calls[0][1]["Authorization"])
+
+    def test_generate_provider_reply_records_usage_snapshot_when_config_dir_is_provided(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            reset_usage_snapshot()
+            client = FakeHttpClient(
+                {
+                    "https://openrouter.ai/api/v1/chat/completions": FakeResponse(
+                        status_code=200,
+                        payload={
+                            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+                            "choices": [{"message": {"content": "ready"}}],
+                        },
+                    )
+                }
+            )
+
+            reply = generate_provider_reply(
+                Provider.OPENROUTER,
+                model_id="openai/gpt-4o-mini",
+                api_key="router-key",
+                base_url=None,
+                system_prompt="You are Duckln.",
+                user_message="hello",
+                client=client,
+                config_dir=Path(temp_dir),
+            )
+
+            usage = initialize_state_store(Path(temp_dir)).get_usage_snapshot()
+            self.assertEqual("ready", reply)
+            assert usage is not None
+            self.assertEqual(15, usage.total_tokens)
+
     def test_r1_plan1_plan2_openrouter_full_validation_flow_succeeds(self) -> None:
         adapter = OpenRouterAdapter()
         client = FakeHttpClient(
@@ -364,6 +434,62 @@ class ProviderAdaptersReqR1Plan1Plan2Test(unittest.TestCase):
         self.assertTrue(result.ok)
         self.assertEqual("Ollama model mistral:latest is ready locally.", result.message)
         self.assertEqual("http://localhost:11434/api/pull", client.calls[0][0])
+
+
+class ConversationTimeoutPlan69Test(unittest.TestCase):
+    """Plan 69 Fix 1: conversation POST uses the generous conversation timeout
+    (not the fast model-list timeout) and retries once on a transport error."""
+
+    def test_ollama_conversation_uses_conversation_timeout(self) -> None:
+        from duckln.ai_client import OLLAMA_CONVERSATION_TIMEOUT_SECONDS
+
+        adapter = OllamaAdapter()
+        url = adapter.conversation_url()
+        client = FakeHttpClient({url: FakeResponse(status_code=200, payload={"response": "hello"})})
+        text = adapter.generate_reply(
+            None, model_id="gemma2:2b", system_prompt="sys", user_message="hi", client=client,
+        )
+        self.assertEqual(text, "hello")
+        # The POST must use the long conversation timeout, NOT the 2s tags timeout.
+        self.assertEqual(client.calls[0][2], OLLAMA_CONVERSATION_TIMEOUT_SECONDS)
+        self.assertNotEqual(client.calls[0][2], adapter.timeout_seconds)
+
+    def test_cloud_conversation_uses_conversation_timeout(self) -> None:
+        from duckln.ai_client import CONVERSATION_TIMEOUT_SECONDS, OpenAIAdapter
+
+        adapter = OpenAIAdapter()
+        url = adapter.conversation_url()
+        client = FakeHttpClient({
+            url: FakeResponse(
+                status_code=200,
+                payload={"choices": [{"message": {"content": "ok"}}]},
+            )
+        })
+        adapter.generate_reply(
+            "key", model_id="gpt-4o-mini", system_prompt="s", user_message="u", client=client,
+        )
+        self.assertEqual(client.calls[0][2], CONVERSATION_TIMEOUT_SECONDS)
+
+    def test_conversation_retries_once_on_transport_error(self) -> None:
+        adapter = OllamaAdapter()
+        url = adapter.conversation_url()
+
+        class FlakyClient:
+            def __init__(self):
+                self.calls = 0
+
+            def post(self, u, *, headers, json, timeout):
+                self.calls += 1
+                if self.calls == 1:
+                    raise TimeoutError("cold load")
+                return FakeResponse(status_code=200, payload={"response": "recovered"})
+
+        client = FlakyClient()
+        text = adapter.generate_reply(
+            None, model_id="gemma2:2b", system_prompt="s", user_message="u", client=client,
+        )
+        self.assertEqual(text, "recovered")
+        self.assertEqual(client.calls, 2)
 
 
 if __name__ == "__main__":

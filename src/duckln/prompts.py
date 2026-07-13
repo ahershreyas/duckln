@@ -8,6 +8,7 @@ import re
 from duckln.diagnostics import ErrorCategory
 from duckln.modes import ControlMode, evaluate_mode_action
 from duckln.safety import assess_command
+from duckln.tool_registry import tool_policy_summary
 
 
 MAX_NEXT_COMMANDS = 3
@@ -47,8 +48,30 @@ class VerificationCheck:
     command: str
 
 
-def build_system_prompt(mode: ControlMode) -> str:
+def build_system_prompt(
+    mode: ControlMode,
+    *,
+    workspace_sections: dict[str, str] | None = None,
+    execution_target: str = "local",
+) -> str:
     """Build a bounded provider-neutral system prompt."""
+
+    sections = workspace_sections or {}
+    prompt_parts = [
+        build_core_system_prompt(mode),
+        build_tool_policy_prompt(execution_target=execution_target),
+        build_planning_prompt(),
+    ]
+    prompt_parts.extend(_workspace_prompt_blocks(sections))
+    return "\n".join(
+        (
+            *prompt_parts,
+        )
+    )
+
+
+def build_core_system_prompt(mode: ControlMode) -> str:
+    """Build the core Duckln system prompt shared by provider-backed flows."""
 
     mode_line = {
         ControlMode.HITL: "HITL: explain briefly and suggest commands only.",
@@ -61,8 +84,48 @@ def build_system_prompt(mode: ControlMode) -> str:
         "Return at most 1-3 exact next commands. "
         "Each command must have a short purpose label. "
         "Do not invent fixes or include full logs. "
+        "Understand whether the user is asking for conversation, repo analysis, setup planning, or execution. "
+        "Answer directly when intent is clear and avoid robotic fallback. "
+        "Prefer the next useful delta over repeating the prior answer. "
         f"{mode_line}"
     )
+
+
+def build_tool_policy_prompt(*, execution_target: str) -> str:
+    """Build the tool-policy layer for prompt composition."""
+
+    return tool_policy_summary(execution_target=execution_target)
+
+
+def build_planning_prompt() -> str:
+    """Build the planning-discipline layer for prompt composition."""
+
+    return (
+        "Before repo-changing work, create or update TODO.md with understanding, inspection steps, planned changes, "
+        "and what completion looks like. Keep active execution-target continuity unless the user changes it."
+    )
+
+
+def build_subagent_prompt_template(
+    *,
+    subagent_name: str,
+    execution_target: str,
+    workspace_sections: dict[str, str] | None = None,
+    allowed_tool_labels: tuple[str, ...] = (),
+) -> str:
+    """Build a compact specialist/subagent prompt scaffold."""
+
+    prompt = (
+        f"You are the {subagent_name} specialist. Read before acting, plan before changing, stay grounded in repo evidence, "
+        f"use only tools from tools.json for the active {execution_target} target, follow Duckln's shared trace contract by naming the tool and action you are taking, "
+        "show web sources or bounded search queries when you use them, and escalate risky or unclear work to the supervisor."
+    )
+    if allowed_tool_labels:
+        prompt += f" Allowed tools for this specialist: {', '.join(allowed_tool_labels)}."
+    sections = workspace_sections or {}
+    if not sections:
+        return prompt
+    return prompt + "\n" + "\n".join(_workspace_prompt_blocks(sections))
 
 
 def build_task_prompt(
@@ -80,6 +143,37 @@ def build_task_prompt(
         f"Classified error: {error_category.value}\n"
         f"Redacted stderr: {redacted_stderr}\n"
         "Respond with a concise explanation, 1-3 exact next commands, and only the minimum needed context."
+    )
+
+
+def build_repair_skill_prompt(
+    *,
+    failed_command: str,
+    error_output: str,
+    recovery_command: str,
+    repo_family: str,
+    repo_name: str,
+    framework: str,
+) -> str:
+    """Build an LLM prompt that extracts a reusable repair skill from a successful recovery."""
+    safe_error = error_output.strip()[:800] if error_output else "(no output)"
+    return (
+        "A repo setup repair just succeeded. Extract a reusable skill note so future agents "
+        "know what to do when they see the same error.\n\n"
+        f"Repo: {repo_name} ({framework}), family: {repo_family}\n"
+        f"Failed command: {failed_command}\n"
+        f"Error output (trimmed):\n{safe_error}\n"
+        f"Recovery command that worked: {recovery_command}\n\n"
+        "Respond with ONLY a JSON object — no markdown, no explanation. Schema:\n"
+        "{\n"
+        '  "slug": "repair-<repo_family>-<short-error-keyword>",\n'
+        '  "title": "Repair: <one short phrase>",\n'
+        '  "trigger_pattern": "<one-line pattern a future agent should match in stderr>",\n'
+        '  "fix_sequence": ["<command1>", "<command2>"],\n'
+        '  "verification": "<command to confirm fix worked>",\n'
+        '  "notes": "<optional caveat or empty string>"\n'
+        "}\n"
+        "Keep each field concise. slug must be lowercase with hyphens only."
     )
 
 
@@ -182,3 +276,26 @@ def _extract_missing_path(command: str) -> str | None:
     if len(parts) > 1:
         return parts[-1]
     return None
+
+
+def _workspace_prompt_blocks(sections: dict[str, str]) -> tuple[str, ...]:
+    ordered = (
+        "IDENTITY.md",
+        "SOUL.md",
+        "USER.md",
+        "TOOLS.md",
+    )
+    blocks: list[str] = []
+    for name in ordered:
+        content = sections.get(name)
+        if content:
+            blocks.append(f"{name}\n{content}")
+    return tuple(blocks)
+
+
+# --- Plan 67/157: Plan Mode prompts ------------------------------------------
+# Plan 157 P3: the five SYSTEM_PROMPT_PLAN_* constants that used to live here are RETIRED.
+# Each planning agent's prompt is now its `.md` spec body (the single source of truth):
+#   PROPOSE → agents/planner.md   CRITIQUE → agents/critic.md   CLARIFY → agents/clarifier.md
+#   VERDICT → agents/verdict.md   ATTRIBUTE → agents/attributor.md
+# plan_mode.py sources them via `_spec_prompt(<name>)`. Edit behavior by editing the spec.

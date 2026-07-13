@@ -65,6 +65,19 @@ class DiagnosticsReqR5R6R10Plan6Plan7Plan12Plan13Test(unittest.TestCase):
         self.assertNotIn("192.168.1.4", redacted)
         self.assertIn("[REDACTED", redacted)
 
+    def test_plan78_redaction_masks_oauth_urls_and_auth_headers(self) -> None:
+        text = (
+            "callback https://app/cb?code=AUTH_abc123&state=xyz789 "
+            "and access_token=tok_live_SECRET99 "
+            "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.payload.sig"
+        )
+        redacted = redact_sensitive_data(text)
+        self.assertNotIn("AUTH_abc123", redacted)
+        self.assertNotIn("xyz789", redacted)
+        self.assertNotIn("tok_live_SECRET99", redacted)
+        self.assertNotIn("eyJhbGciOiJIUzI1NiJ9.payload.sig", redacted)
+        self.assertIn("[REDACTED]", redacted)
+
     def test_r5_plan6_payload_builder_is_mode_aware(self) -> None:
         context = gather_minimal_context(
             command="python app.py",

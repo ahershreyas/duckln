@@ -8,8 +8,12 @@ from duckln.diagnostics import ErrorCategory
 from duckln.modes import ControlMode
 from duckln.prompts import (
     SuggestedCommand,
+    build_core_system_prompt,
+    build_planning_prompt,
+    build_subagent_prompt_template,
     build_system_prompt,
     build_task_prompt,
+    build_tool_policy_prompt,
     build_verification_checks,
     get_teaching_snippet,
     normalize_suggested_commands,
@@ -19,10 +23,44 @@ from duckln.prompts import (
 
 class PromptAndSuggestionTest(unittest.TestCase):
     def test_system_prompt_is_bounded_and_mode_aware(self) -> None:
-        prompt = build_system_prompt(ControlMode.HOTL)
+        prompt = build_system_prompt(
+            ControlMode.HOTL,
+            workspace_sections={"SOUL.md": "Stay calm.", "USER.md": "Preferred alias: Shreyas"},
+            execution_target="vm",
+        )
 
         self.assertIn("at most 1-3 exact next commands", prompt)
         self.assertIn("require approval", prompt)
+        self.assertIn("tools.json", prompt)
+        self.assertIn("TODO.md", prompt)
+        self.assertIn("SOUL.md", prompt)
+        self.assertIn("USER.md", prompt)
+        self.assertIn("Multipass", prompt)
+
+    def test_layered_prompt_builders_capture_tool_and_planning_rules(self) -> None:
+        self.assertIn("Answer directly", build_core_system_prompt(ControlMode.HITL))
+        self.assertIn("tools.json", build_tool_policy_prompt(execution_target="vm"))
+        self.assertIn("announce", build_tool_policy_prompt(execution_target="vm").lower())
+        self.assertIn("shared duckln trace contract", build_tool_policy_prompt(execution_target="vm").lower())
+        self.assertIn("tool order starts with", build_tool_policy_prompt(execution_target="vm").lower())
+        self.assertIn("fresh remote information", build_tool_policy_prompt(execution_target="vm").lower())
+        self.assertIn("TODO.md", build_planning_prompt())
+        self.assertIn(
+            "use only tools from tools.json",
+            build_subagent_prompt_template(
+                subagent_name="python",
+                execution_target="local",
+                workspace_sections={"TOOLS.md": "Use the smallest useful tool."},
+            ),
+        )
+        self.assertIn(
+            "show web sources or bounded search queries",
+            build_subagent_prompt_template(
+                subagent_name="python",
+                execution_target="local",
+                workspace_sections={"TOOLS.md": "Use the smallest useful tool."},
+            ).lower(),
+        )
 
     def test_task_prompt_uses_redacted_context(self) -> None:
         prompt = build_task_prompt(

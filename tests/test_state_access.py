@@ -13,6 +13,8 @@ from state.access import (
     initialize_managed_memory_state,
     materialize_managed_memory_state,
     read_config_snapshot,
+    read_subagent_workspace_sections,
+    read_supervisor_workspace_sections,
     read_session_summary_state,
     record_system_probe,
     write_knowledge_memory_state,
@@ -101,6 +103,33 @@ class StateAccessTest(unittest.TestCase):
                 "# Root Contract\n\nStay concise.",
                 (Path(temp_dir) / "memory" / "AGENTS.md").read_text(encoding="utf-8").strip(),
             )
+            self.assertTrue((Path(temp_dir) / "memory" / "SOUL.md").exists())
+            self.assertTrue((Path(temp_dir) / "memory" / "USER.md").exists())
+            self.assertTrue((Path(temp_dir) / "memory" / "IDENTITY.md").exists())
+            self.assertTrue((Path(temp_dir) / "memory" / "TOOLS.md").exists())
+            self.assertTrue((Path(temp_dir) / "memory" / "BOOTSTRAP.md").exists())
+            self.assertTrue((Path(temp_dir) / "memory" / "tools.json").exists())
+            self.assertTrue((Path(temp_dir) / "memory" / "subagents" / "python_setup" / "AGENTS.md").exists())
+
+    def test_prompt_section_helpers_return_scoped_workspace_views(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            initialize_managed_memory_state(temp_dir)
+
+            supervisor = read_supervisor_workspace_sections(temp_dir, route_family="repo_run")
+            clarify = read_supervisor_workspace_sections(temp_dir, route_family="clarify")
+            repair = read_supervisor_workspace_sections(temp_dir, route_family="conversation_repair")
+            social = read_supervisor_workspace_sections(temp_dir, route_family="capability")
+            subagent = read_subagent_workspace_sections(temp_dir, slug="python_setup")
+
+            self.assertNotIn("IDENTITY.md", supervisor)
+            self.assertIn("TOOLS.md", supervisor)
+            self.assertNotIn("TOOLS.md", clarify)
+            self.assertNotIn("IDENTITY.md", repair)
+            self.assertIn("USER.md", repair)
+            self.assertIn("IDENTITY.md", social)
+            self.assertNotIn("TOOLS.md", social)
+            self.assertIn("subagents/python_setup/AGENTS.md", subagent)
+            self.assertIn("subagents/python_setup/SOUL.md", subagent)
 
     def test_skill_and_knowledge_memory_round_trip_from_sqlite_to_filesystem(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -123,6 +152,8 @@ class StateAccessTest(unittest.TestCase):
 
             self.assertIn("Virtualenv fix", skill_path.read_text(encoding="utf-8"))
             self.assertIn("CUDA check", knowledge_path.read_text(encoding="utf-8"))
+            self.assertTrue((Path(temp_dir) / "memory" / "tools.json").exists())
+            self.assertTrue((Path(temp_dir) / "memory" / "subagents" / "debug_recovery" / "AGENTS.md").exists())
 
     def test_clear_memory_scope_session_removes_session_rows_and_files(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -191,11 +222,12 @@ class StateAccessTest(unittest.TestCase):
                 "# Root Contract\n\nStay concise.",
                 (Path(temp_dir) / "memory" / "AGENTS.md").read_text(encoding="utf-8").strip(),
             )
+            self.assertTrue((Path(temp_dir) / "memory" / "tools.json").exists())
             self.assertFalse((Path(temp_dir) / "memory" / "skills" / "venv-fix.md").exists())
             self.assertFalse(config_file.exists())
             with sqlite3.connect(temp_dir + "/state/duckln-state.sqlite3") as connection:
                 self.assertEqual(0, connection.execute("SELECT COUNT(*) FROM config_state").fetchone()[0])
-                self.assertEqual(1, connection.execute("SELECT COUNT(*) FROM managed_memory").fetchone()[0])
+                self.assertGreaterEqual(connection.execute("SELECT COUNT(*) FROM managed_memory").fetchone()[0], 3)
 
 
 if __name__ == "__main__":

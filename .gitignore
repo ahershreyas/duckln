@@ -1,4 +1,17 @@
+# Python bytecode
 __pycache__/
 *.pyc
-__pycache__/
-*.pyc
+
+# macOS finder metadata
+.DS_Store
+**/.DS_Store
+
+# Editor / OS noise
+*.swp
+.idea/
+.vscode/
+
+# Build / packaging artifacts
+build/
+dist/
+*.egg-info/
