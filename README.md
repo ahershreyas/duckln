@@ -1,4 +1,4 @@
-# Duckln — an AI terminal agent that fixes, verifies, and keeps you informed.
+# Duckln — an AI terminal agent that setup's repo, fixes issues, verifies, and keeps you informed.
 
 ![Duckln](./docs/assets/duckln-banner.txt)
 
